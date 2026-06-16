@@ -62,10 +62,10 @@ Use a compact card with real card sections, not Markdown separators.
 - First `div`: summary lines for version, judgment, context scope, and number of
   high-risk items.
 - Each risk item:
-  - title line: `**【NN｜等级｜领域】标题**`;
-  - first field row: `旧行为` / `新行为`;
-  - second field row: `触发` / `影响`;
-  - final full-width row: `处理`;
+  - title line: natural title only, for example `**MV refresh 对过滤数据默认更严格**`;
+  - first field row: `之前行为` / `现在行为`;
+  - second field row: `触发条件` / `影响`;
+  - final full-width row: `处理方式`;
   - optional final full-width row: `例`;
   - `hr` between items.
 - Put at most 6 risk items in one card. Split into multiple cards when there are
@@ -80,11 +80,10 @@ Use a compact card with real card sections, not Markdown separators.
   keywords.
 - Do not wrap long `key=value` strings, local paths, or whole sentences in code
   spans; Feishu renders them as long gray blocks and line breaks badly.
-- Use risk levels: `阻断`, `高`, `中`, `低`, `需验证`.
-- Use short domains: `导入`, `MV`, `配置`, `变量`, `缓存`, `存储`, `客户端`,
-  `协议`, `权限`, `查询`.
-- Handling steps should be one sentence, using `1）...；2）...；3）...。`
-  instead of nested bullets.
+- Do not add numbering, risk levels, or domain labels to risk item titles. Use
+  simple titles like `transform_type_prefer_string_for_varchar 默认变更`.
+- Use the full field names `之前行为`, `现在行为`, `触发条件`, `影响`, `处理方式`.
+- Handling steps should be one concise sentence; avoid nested bullets.
 
 ## Minimal Interactive Card Template
 
@@ -118,7 +117,7 @@ card JSON object itself.
       "tag": "div",
       "text": {
         "tag": "lark_md",
-        "content": "**【01｜高｜导入】insert_timeout 接管 INSERT-like 任务超时**"
+        "content": "**insert_timeout 接管 INSERT-like 任务超时**"
       }
     },
     {
@@ -128,14 +127,14 @@ card JSON object itself.
           "is_short": true,
           "text": {
             "tag": "lark_md",
-            "content": "**旧行为**\\n3.3.22-ee 没有独立 `insert_timeout`，DML/CTAS/MV refresh 更依赖 `query_timeout` 或任务自身 timeout。"
+            "content": "**之前行为**\\n3.3.22-ee 没有独立 `insert_timeout`，DML/CTAS/MV refresh 更依赖 `query_timeout` 或任务自身 timeout。"
           }
         },
         {
           "is_short": true,
           "text": {
             "tag": "lark_md",
-            "content": "**新行为**\\n3.5.18-ee 新增 `insert_timeout`，默认 14400 秒，相关任务路径会使用它。"
+            "content": "**现在行为**\\n3.5.18-ee 新增 `insert_timeout`，默认 14400 秒，相关任务路径会使用它。"
           }
         }
       ]
@@ -147,7 +146,7 @@ card JSON object itself.
           "is_short": true,
           "text": {
             "tag": "lark_md",
-            "content": "**触发**\\nINSERT、UPDATE、DELETE、CTAS、MV refresh、统计收集、调度任务。"
+            "content": "**触发条件**\\nINSERT、UPDATE、DELETE、CTAS、MV refresh、统计收集、调度任务。"
           }
         },
         {
@@ -163,7 +162,7 @@ card JSON object itself.
       "tag": "div",
       "text": {
         "tag": "lark_md",
-        "content": "**处理**\\n1）盘点 SQL 初始化、任务属性、MV session property；2）对大导入和 MV refresh 显式验证 `insert_timeout`。"
+        "content": "**处理方式**\\n盘点 SQL 初始化、任务属性、MV session property；对大导入和 MV refresh 显式验证 `insert_timeout`。"
       }
     }
   ]
@@ -204,11 +203,17 @@ not be described as one:
 范围：<context>
 
 重点差异
-────────────────
-【01｜高｜导入】<title>
-　　旧行为：...
-　　新行为：...
-　　触发：...
-　　影响：...
-　　处理：...
+<title>
+之前行为：...
+现在行为：...
+触发条件：...
+影响：...
+处理方式：...
+
+<title>
+之前行为：...
+现在行为：...
+触发条件：...
+影响：...
+处理方式：...
 ```

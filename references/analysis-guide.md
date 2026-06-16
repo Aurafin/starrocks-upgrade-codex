@@ -161,9 +161,9 @@ Feishu card mode should use real card sections:
 
 - Header: `StarRocks 升级评估｜<base> -> <target>`
 - Summary `div`: version, judgment, scope, key risk domains
-- Per-risk title: `【NN｜等级｜领域】Risk item title`
-- Per-risk `fields`: old/new and trigger/impact in two-column card fields
-- Per-risk full-width `div`: handling steps
+- Per-risk title: natural title only, such as `MV refresh 对过滤数据默认更严格`
+- Per-risk `fields`: `之前行为`/`现在行为` and `触发条件`/`影响` in two-column card fields
+- Per-risk full-width `div`: `处理方式`
 - Optional action button only for real URLs
 - Split after 6 risk items per card
 
@@ -172,16 +172,16 @@ Feishu output mode rules:
 - For chat messages, do not pretend plain text is a card. Generate interactive
   card JSON and send it with `lark-cli im +messages-send --msg-type interactive`
   after explicit approval.
-- Use two-digit item numbers and title tags: `【01｜高｜导入】`.
-- Use risk levels: `阻断`, `高`, `中`, `低`, `需验证`.
-- Use short domains such as `导入`, `MV`, `配置`, `变量`, `缓存`, `存储`, `客户端`, `协议`, `权限`, `查询`.
+- Do not add numbered, risk-level, or domain title tags.
+- Do not add risk levels or domain labels into the item title. Let priority affect ordering only.
 - Use inline code only for short config names, variables, headers, or SQL keywords.
   Do not wrap long `key=value` strings, long paths, or whole sentences in code spans.
-- Keep each field compact; when handling has multiple steps, write `1）...；2）...；3）...。`
-  instead of bullet lists.
-- Text fallback only: use two full-width spaces (`　　`) before field lines, avoid
-  Markdown ordered lists like `1.` / `10.`, avoid nested `-` or `*` bullets, and
-  use `────────────────` between risk items.
+- Keep each field compact, but preserve the full field names: `之前行为`, `现在行为`,
+  `触发条件`, `影响`, `处理方式`.
+- Text fallback only: use the simple plain-text format `标题` followed by
+  `之前行为：...`, `现在行为：...`, `触发条件：...`, `影响：...`, `处理方式：...`;
+  separate items with blank lines; do not use numbered lists, title tags, nested
+  bullets, or divider lines.
 
 Do not collapse those fields into a single paragraph. The short answer can
 limit the number of items, but each selected item must still expose the old
