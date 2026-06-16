@@ -190,6 +190,103 @@ class TestFeatureImpactScan(unittest.TestCase):
             ids = {item["id"] for item in findings}
             self.assertIn("insert_timeout_controls_insert_like_tasks", ids)
             self.assertIn("stream_load_merge_commit_feature", ids)
+            self.assertEqual({item["type"] for item in findings}, {"feature_introduced"})
+
+    def test_existing_feature_comment_only_change_is_not_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            self._run_git(repo, "init")
+            self._run_git(repo, "config", "user.email", "test@example.com")
+            self._run_git(repo, "config", "user.name", "Test")
+
+            session_variable = repo / "fe/fe-core/src/main/java/com/starrocks/qe/SessionVariable.java"
+            stream_header = repo / "be/src/http/http_common.h"
+            session_variable.parent.mkdir(parents=True)
+            stream_header.parent.mkdir(parents=True)
+            session_variable.write_text(
+                'public static final String INSERT_TIMEOUT = "insert_timeout";\n'
+                "@VariableMgr.VarAttr(name = INSERT_TIMEOUT)\n"
+                "private int insertTimeoutS = 14400;\n",
+                encoding="utf-8",
+            )
+            stream_header.write_text(
+                'static const std::string HTTP_ENABLE_MERGE_COMMIT = "enable_merge_commit";\n',
+                encoding="utf-8",
+            )
+            base = self._commit_all(repo, "base")
+
+            session_variable.write_text(
+                'public static final String INSERT_TIMEOUT = "insert_timeout";\n'
+                "@VariableMgr.VarAttr(name = INSERT_TIMEOUT)\n"
+                "private int insertTimeoutS = 14400;\n"
+                "// insert_timeout docs only\n",
+                encoding="utf-8",
+            )
+            stream_header.write_text(
+                'static const std::string HTTP_ENABLE_MERGE_COMMIT = "enable_merge_commit";\n'
+                "// enable_batch_write docs only\n",
+                encoding="utf-8",
+            )
+            target = self._commit_all(repo, "target")
+
+            findings = scan_feature_impact_findings(
+                repo,
+                base,
+                target,
+                [
+                    "fe/fe-core/src/main/java/com/starrocks/qe/SessionVariable.java",
+                    "be/src/http/http_common.h",
+                ],
+            )
+            self.assertEqual(findings, [])
+
+    def test_existing_feature_behavior_change_is_reported_as_changed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            self._run_git(repo, "init")
+            self._run_git(repo, "config", "user.email", "test@example.com")
+            self._run_git(repo, "config", "user.name", "Test")
+
+            session_variable = repo / "fe/fe-core/src/main/java/com/starrocks/qe/SessionVariable.java"
+            stream_header = repo / "be/src/http/http_common.h"
+            session_variable.parent.mkdir(parents=True)
+            stream_header.parent.mkdir(parents=True)
+            session_variable.write_text(
+                'public static final String INSERT_TIMEOUT = "insert_timeout";\n'
+                "@VariableMgr.VarAttr(name = INSERT_TIMEOUT)\n"
+                "private int insertTimeoutS = 14400;\n",
+                encoding="utf-8",
+            )
+            stream_header.write_text(
+                'static const std::string HTTP_ENABLE_MERGE_COMMIT = "enable_merge_commit";\n'
+                "bool enable_batch_write = false;\n",
+                encoding="utf-8",
+            )
+            base = self._commit_all(repo, "base")
+
+            session_variable.write_text(
+                'public static final String INSERT_TIMEOUT = "insert_timeout";\n'
+                "@VariableMgr.VarAttr(name = INSERT_TIMEOUT)\n"
+                "private int insertTimeoutS = 7200;\n",
+                encoding="utf-8",
+            )
+            stream_header.write_text(
+                'static const std::string HTTP_ENABLE_MERGE_COMMIT = "enable_merge_commit";\n'
+                "bool enable_batch_write = true;\n",
+                encoding="utf-8",
+            )
+            target = self._commit_all(repo, "target")
+
+            findings = scan_feature_impact_findings(
+                repo,
+                base,
+                target,
+                [
+                    "fe/fe-core/src/main/java/com/starrocks/qe/SessionVariable.java",
+                    "be/src/http/http_common.h",
+                ],
+            )
+            self.assertEqual({item["type"] for item in findings}, {"feature_behavior_changed"})
 
 
 if __name__ == "__main__":

@@ -81,6 +81,11 @@ Always ask:
 
 For `feature-impact-findings.json`, treat each item as a candidate that needs source verification and a user-facing behavior entry.
 
+First check `type`:
+
+- `feature_introduced`: base lacks the feature anchors and target contains them. It is valid to describe old behavior as "not supported / no such path".
+- `feature_behavior_changed`: both versions already contain the feature anchors. Do not say the feature is newly introduced. Explain the exact changed default, header, routing, timeout, queueing, or task path after reading the diff/source.
+
 ### INSERT-like task timeout
 
 Search keys:
@@ -96,8 +101,8 @@ Check whether the target version routes `INSERT`, `UPDATE`, `DELETE`, `CTAS`, MV
 
 User-facing conclusion should say:
 
-- Before: which jobs followed `query_timeout` or old task properties.
-- Now: which jobs use `insert_timeout`, including the default when visible in `SessionVariable`.
+- For `feature_introduced`, before/now should compare old `query_timeout` or old task properties against target `insert_timeout`, including the default when visible in `SessionVariable`.
+- For `feature_behavior_changed`, before/now should compare the two concrete implementations, not repeat the introduced-feature wording.
 - Trigger: SQL/task/MV/PIPE paths that can be affected.
 - Impact: old `query_timeout` tuning may no longer bound these jobs; timeouts can become longer or different than expected.
 - Handling: set `insert_timeout` explicitly through session/global defaults, MV/session properties, task properties, PIPE properties, or SQL hints where supported.
@@ -118,8 +123,8 @@ Check Stream Load HTTP headers, FE batch-write scheduling, BE batch-write execut
 
 User-facing conclusion should say:
 
-- Before: old versions do not route Stream Load through merge commit/batch write.
-- Now: target version can accept merge-commit headers and route loads through batching/merge-commit queues.
+- For `feature_introduced`, before/now should say old versions do not route Stream Load through merge commit/batch write, while target accepts merge-commit headers and routes loads through batching/merge-commit queues.
+- For `feature_behavior_changed`, before/now should compare the exact changed header, default, routing, queueing, timeout, or transaction-state behavior.
 - Trigger: clients/connectors setting `enable_merge_commit=true` or related headers/configs.
 - Impact: suitable for many small concurrent writes, but unsuitable scenarios can add buffering/wait time, queue pressure, commit delay, or performance regression.
 - Handling: inventory client headers, pressure-test enabled/disabled paths, tune batch size/concurrency/interval, and keep a rollback switch by stopping `enable_merge_commit`.

@@ -112,6 +112,7 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 - 不要把多个互不相关的变化合并成一句，例如“配置默认值变化：a、b、c”。每个会影响用户操作的变化都要独立成条。
 - 自动扫描的 finding 数量、commit 数量、源码域数量只能作为内部筛选依据，不能作为最终结论主体。
 - `feature-impact-findings.json` 里的候选项不能直接照抄，但必须逐项判断是否应该进入“重点差异”；如果丢弃，要有源码复核后的理由。
+- 区分 `feature_introduced` 和 `feature_behavior_changed`：只有 base 不存在、target 存在时才写“新增功能”；两边都存在时只能写“已有功能行为变化候选”，必须说明具体变更点，不能套用跨 minor 的旧/新行为结论。
 - 优先输出用户能直接验证或调整的行为变化：SQL 语义、配置默认值、配置移除/改名、系统变量、MV 激活/刷新/改写、导入/事务、存储/DataCache、客户端兼容、滚动升级风险。
 - 如果发现“源版本所在分支已有修复但目标版本缺失”，单独作为“版本选择风险”写清楚受影响场景；不要只列 PR 号或一句“建议升更高 patch”。
 

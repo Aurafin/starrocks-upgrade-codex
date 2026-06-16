@@ -203,7 +203,8 @@ SCANNER_PATTERNS = {
 FEATURE_IMPACT_RULES = [
     {
         "id": "insert_timeout_controls_insert_like_tasks",
-        "title": "INSERT-like task timeout is controlled by insert_timeout",
+        "introduced_title": "INSERT-like task timeout is introduced with insert_timeout",
+        "changed_title": "INSERT-like task timeout behavior changed",
         "risk": "high",
         "impact": {"data": False, "behavior": True, "operational": True, "rolling_upgrade": False},
         "patterns": [
@@ -218,6 +219,15 @@ FEATURE_IMPACT_RULES = [
             "fe/fe-core/src/main/java/com/starrocks/alter/**",
             "fe/fe-core/src/main/java/com/starrocks/common/util/PropertyAnalyzer.java",
         ],
+        "presence_patterns": [
+            "fe/fe-core/src/main/java/com/starrocks/qe/SessionVariable.java",
+            "fe/fe-core/src/main/java/com/starrocks/qe/ConnectContext.java",
+            "fe/fe-core/src/main/java/com/starrocks/qe/StmtExecutor.java",
+            "fe/fe-core/src/main/java/com/starrocks/transaction/TransactionStmtExecutor.java",
+            "fe/fe-core/src/main/java/com/starrocks/scheduler/PartitionBasedMvRefreshProcessor.java",
+            "fe/fe-core/src/main/java/com/starrocks/scheduler/TaskRun.java",
+            "fe/fe-core/src/main/java/com/starrocks/load/pipe/**",
+        ],
         "keywords": [
             "insert_timeout",
             "INSERT_TIMEOUT",
@@ -226,15 +236,33 @@ FEATURE_IMPACT_RULES = [
             "isExecLoadType",
             "task.insert_timeout",
         ],
+        "presence_keywords": [
+            "INSERT_TIMEOUT",
+            "\"insert_timeout\"",
+            "insertTimeoutS",
+            "MV_SESSION_INSERT_TIMEOUT",
+            "task.insert_timeout",
+        ],
+        "change_keywords": [
+            "insertTimeoutS",
+            "setInsertTimeoutS",
+            "setInsertTimeout",
+            "isExecLoadType",
+            "MV_SESSION_INSERT_TIMEOUT",
+            "task.insert_timeout",
+            "@VariableMgr.VarAttr(name = INSERT_TIMEOUT)",
+        ],
         "before_behavior": "INSERT-like tasks may have followed query_timeout in the older version.",
         "now_behavior": "Target code defines insert_timeout and uses it in INSERT/load-like execution paths; default is commonly 14400 seconds when present.",
+        "changed_behavior": "Both versions already define insert_timeout; target changed related timeout defaults, routing, task properties, or execution paths and needs source review.",
         "trigger": "INSERT/UPDATE/DELETE/CTAS, materialized view refresh, statistics collection, PIPE, or task properties that previously tuned query_timeout only.",
         "impact_hint": "Old query_timeout tuning may no longer control these jobs. Jobs can wait longer than expected, time out differently, or require session/task/MV property changes.",
         "handling_hint": "Check SHOW VARIABLES, user properties, MV properties, PIPE/task properties and SQL hints. Set insert_timeout explicitly where these jobs need a non-default timeout.",
     },
     {
         "id": "stream_load_merge_commit_feature",
-        "title": "Stream Load merge_commit/batch write path is introduced or changed",
+        "introduced_title": "Stream Load merge_commit/batch write path is introduced",
+        "changed_title": "Stream Load merge_commit/batch write behavior changed",
         "risk": "high",
         "impact": {"data": False, "behavior": True, "operational": True, "rolling_upgrade": True},
         "patterns": [
@@ -248,6 +276,15 @@ FEATURE_IMPACT_RULES = [
             "be/src/runtime/exec_env.cpp",
             "be/src/common/config.h",
         ],
+        "presence_patterns": [
+            "fe/fe-core/src/main/java/com/starrocks/load/batchwrite/**",
+            "fe/fe-core/src/main/java/com/starrocks/load/streamload/StreamLoadHttpHeader.java",
+            "be/src/http/action/stream_load.cpp",
+            "be/src/http/http_common.h",
+            "be/src/runtime/batch_write/**",
+            "be/src/runtime/exec_env.cpp",
+            "be/src/common/config.h",
+        ],
         "keywords": [
             "merge_commit",
             "enable_merge_commit",
@@ -257,8 +294,29 @@ FEATURE_IMPACT_RULES = [
             "enable_batch_write",
             "batch write",
         ],
+        "presence_keywords": [
+            "HTTP_ENABLE_MERGE_COMMIT",
+            "enable_merge_commit",
+            "MergeCommitJob",
+            "batch_write_mgr",
+            "merge_commit_thread_pool",
+        ],
+        "change_keywords": [
+            "HTTP_ENABLE_MERGE_COMMIT",
+            "HTTP_MERGE_COMMIT_ASYNC",
+            "HTTP_MERGE_COMMIT_INTERVAL_MS",
+            "HTTP_MERGE_COMMIT_PARALLEL",
+            "merge_commit_default_timeout_ms",
+            "merge_commit_thread_pool",
+            "merge_commit_txn_state",
+            "enable_batch_write",
+            "_handle_batch_write",
+            "append_data",
+            "subscribe_state",
+        ],
         "before_behavior": "Older versions do not have the Stream Load merge_commit/batch write execution path.",
         "now_behavior": "Target code may accept Stream Load merge_commit headers and route requests through batch write / merge commit queues and transaction-state polling.",
+        "changed_behavior": "Both versions already have merge_commit/batch write; target changed related headers, routing, queueing, timeout, transaction-state, or BE execution paths and needs source review.",
         "trigger": "Stream Load clients or connectors that set enable_merge_commit=true or related merge_commit headers/configs.",
         "impact_hint": "Merge commit can improve many small concurrent loads, but unsuitable workloads can see extra buffering, commit wait, queue pressure, or latency/performance regression.",
         "handling_hint": "Inventory Stream Load headers/client configs, verify batch size/concurrency/latency needs, pressure-test both enabled and disabled paths, and keep a rollback switch to stop setting enable_merge_commit.",
@@ -985,6 +1043,33 @@ def keyword_lines(lines: list[str], keywords: list[str], limit: int) -> list[str
     return matched
 
 
+def non_comment_changed_lines(lines: list[str]) -> list[str]:
+    result = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("//", "/*", "*", "#")):
+            continue
+        result.append(line)
+    return result
+
+
+def files_at_ref_matching(repo: Path, ref: str, patterns: list[str]) -> list[str]:
+    output = run_cmd(["git", "ls-tree", "-r", "--name-only", ref], cwd=repo, timeout=120) or ""
+    files = [line.strip() for line in output.splitlines() if line.strip()]
+    return [path for path in files if any(fnmatch.fnmatch(path, pattern) for pattern in patterns)]
+
+
+def ref_contains_keywords(repo: Path, ref: str, patterns: list[str], keywords: list[str]) -> bool:
+    for file_path in files_at_ref_matching(repo, ref, patterns):
+        content = file_at_ref(repo, ref, file_path)
+        if not content:
+            continue
+        lowered = content.lower()
+        if any(keyword.lower() in lowered for keyword in keywords):
+            return True
+    return False
+
+
 def scan_pattern_findings(repo: Path, base_ref: str, target_ref: str, changed_files: list[str]) -> dict[str, list[dict[str, Any]]]:
     results: dict[str, list[dict[str, Any]]] = {}
     for scanner, spec in SCANNER_PATTERNS.items():
@@ -1038,8 +1123,13 @@ def scan_feature_impact_findings(repo: Path, base_ref: str, target_ref: str, cha
     for rule in FEATURE_IMPACT_RULES:
         source_files = []
         matched_keywords: set[str] = set()
+        matched_change_keywords: set[str] = set()
         diff_previews = []
         lines_changed = 0
+        base_present = ref_contains_keywords(repo, base_ref, rule["presence_patterns"], rule["presence_keywords"])
+        target_present = ref_contains_keywords(repo, target_ref, rule["presence_patterns"], rule["presence_keywords"])
+        if not target_present:
+            continue
         for file_path in changed_files:
             if path_matches(file_path, SKIP_PATHS):
                 continue
@@ -1053,25 +1143,43 @@ def scan_feature_impact_findings(repo: Path, base_ref: str, target_ref: str, cha
             file_keywords = sorted({kw for kw in rule["keywords"] if kw.lower() in joined.lower()})
             if not file_keywords:
                 continue
+            semantic_joined = "\n".join(non_comment_changed_lines(added + removed))
+            file_change_keywords = sorted({kw for kw in rule["change_keywords"] if kw.lower() in semantic_joined.lower()})
             source_files.append(file_path)
             matched_keywords.update(file_keywords)
+            matched_change_keywords.update(file_change_keywords)
             lines_changed += len(added) + len(removed)
             if len(diff_previews) < 60:
                 diff_previews.extend(keyword_lines(removed + added, file_keywords, max(0, 60 - len(diff_previews))))
         if not source_files:
             continue
+        if not base_present:
+            change_type = "feature_introduced"
+            title = rule["introduced_title"]
+            before_behavior = rule["before_behavior"]
+            now_behavior = rule["now_behavior"]
+        else:
+            if not matched_change_keywords:
+                continue
+            change_type = "feature_behavior_changed"
+            title = rule["changed_title"]
+            before_behavior = "Both compared versions already contain this feature surface."
+            now_behavior = rule["changed_behavior"]
         findings.append(
             {
-                "type": "feature_impact_change",
+                "type": change_type,
                 "id": rule["id"],
-                "name": rule["title"],
+                "name": title,
                 "risk": rule["risk"],
                 "impact": rule["impact"],
+                "base_feature_present": base_present,
+                "target_feature_present": target_present,
                 "files": sorted(source_files),
                 "keywords": sorted(matched_keywords),
+                "change_keywords": sorted(matched_change_keywords),
                 "lines_changed": lines_changed,
-                "before_behavior": rule["before_behavior"],
-                "now_behavior": rule["now_behavior"],
+                "before_behavior": before_behavior,
+                "now_behavior": now_behavior,
                 "trigger": rule["trigger"],
                 "impact_hint": rule["impact_hint"],
                 "handling_hint": rule["handling_hint"],
