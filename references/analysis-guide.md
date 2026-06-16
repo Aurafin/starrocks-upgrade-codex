@@ -148,8 +148,8 @@ User-facing conclusion should say:
 ## Final Report Shape
 
 Every user-facing risk item must expose old behavior, new behavior, trigger,
-impact, and handling steps. For normal Codex/Markdown answers, the exact visual
-layout can follow the conversation context.
+impact, and handling steps. Use these exact field names in Chinese:
+`之前行为`, `现在行为`, `触发条件`, `影响`, `处理方式`.
 
 When the user says the result is for Feishu/Lark, group posts, Feishu docs, or
 `lark-cli` publishing, read `references/lark-card-output.md`. Prefer a real
@@ -165,7 +165,9 @@ Feishu card mode should use real card sections:
 - Per-risk `fields`: `之前行为`/`现在行为` and `触发条件`/`影响` in two-column card fields
 - Per-risk full-width `div`: `处理方式`
 - Optional action button only for real URLs
-- Split after 6 risk items per card
+- Prefer one interactive card per important risk item when the user approves
+  multiple Feishu messages. If multiple messages are undesirable, combine risk
+  items into one card and split after 6 risk items per card.
 
 Feishu output mode rules:
 
@@ -176,16 +178,33 @@ Feishu output mode rules:
 - Do not add risk levels or domain labels into the item title. Let priority affect ordering only.
 - Use inline code only for short config names, variables, headers, or SQL keywords.
   Do not wrap long `key=value` strings, long paths, or whole sentences in code spans.
-- Keep each field compact, but preserve the full field names: `之前行为`, `现在行为`,
-  `触发条件`, `影响`, `处理方式`.
-- Text fallback only: use the simple plain-text format `标题` followed by
-  `之前行为：...`, `现在行为：...`, `触发条件：...`, `影响：...`, `处理方式：...`;
-  separate items with blank lines; do not use numbered lists, title tags, nested
-  bullets, or divider lines.
+- Keep each card field compact, but preserve the exact field names: `之前行为`,
+  `现在行为`, `触发条件`, `影响`, `处理方式`.
+- Text fallback: use Markdown ordered list items (`1.`, `2.`, `10.`) with nested
+  bullet lines indented by 4 spaces. This usually renders as hollow-circle
+  nested bullets in Feishu and keeps indentation for double-digit items. Do not
+  add risk/domain title tags or divider lines. Use the exact five field names.
+  Example:
 
-Do not collapse those fields into a single paragraph. The short answer can
-limit the number of items, but each selected item must still expose the old
-behavior, new behavior, trigger, impact, and handling steps.
+```text
+1. INSERT 类任务超时改由 insert_timeout 控制
+    - 之前行为：3.3.22 没有独立的 insert_timeout 变量，插入类任务更容易跟 query_timeout 或各自任务属性绑定。
+    - 现在行为：4.0.10 有 insert_timeout，默认 14400 秒。
+    - 触发条件：INSERT、UPDATE、DELETE、CTAS、MV refresh、统计信息收集、PIPE 等 insert-like task。
+    - 影响：旧版本里通过调 query_timeout 控制这些任务的方式，升级后可能不再覆盖，任务超时可能变长或行为不符合预期。
+    - 处理方式：升级前检查作业、MV、PIPE、统计任务是否依赖 query_timeout；需要时显式设置 insert_timeout，或给 MV/task property 单独配置。
+
+2. MV refresh 对过滤数据默认更严格
+    - 之前行为：3.3.22 使用 enable_mv_refresh_insert_strict 这类旧逻辑，默认不完全等价于 4.0 的严格过滤失败策略。
+    - 现在行为：4.0.10 使用 mv_refresh_fail_on_filter_data=true，并通过 insert_max_filter_ratio 控制过滤数据容忍度。
+    - 触发条件：MV refresh 过程中发生数据过滤、类型转换失败、脏数据、外表分区数据不一致等。
+    - 影响：升级后原来能刷新的 MV 可能刷新失败，或者需要显式设置过滤比例。
+    - 处理方式：重点回归高频 MV refresh；必要时设置 insert_max_filter_ratio 或调整 mv_refresh_fail_on_filter_data。
+```
+
+Do not collapse each item into a single paragraph. The short answer can limit
+the number of items, but each selected item must still expose old behavior, new
+behavior, trigger, impact, and handling steps.
 
 Prioritize:
 
@@ -197,5 +216,5 @@ Prioritize:
 6. PR/commit summary
 
 Keep user-facing output short by choosing fewer, higher-value items, not by
-removing the before/now/trigger/impact/handling fields. Put detailed raw
-artifacts in the output directory.
+removing the old/new/trigger/impact/handling fields. Put detailed raw artifacts
+in the output directory.

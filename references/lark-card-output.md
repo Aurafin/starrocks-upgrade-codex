@@ -5,7 +5,8 @@ to Feishu/Lark, a group post, a Feishu document, or through `lark-cli`.
 
 ## Output Choice
 
-Prefer an interactive card for chat messages:
+Prefer interactive cards for chat messages. For best readability, send one card
+per important risk item when the user approves multiple Feishu messages:
 
 ```bash
 lark-cli im +messages-send --chat-id oc_xxx --as bot --msg-type interactive --content '<card-json>'
@@ -69,7 +70,8 @@ Use a compact card with real card sections, not Markdown separators.
   - optional final full-width row: `例`;
   - `hr` between items.
 - Put at most 6 risk items in one card. Split into multiple cards when there are
-  more than 6 important items.
+  more than 6 important items. If the user wants the best Feishu reading
+  experience and approves multiple messages, use one card per risk item.
 - Add an action button only when there is a real URL, such as a Feishu doc or
   hosted report. Do not create a button for local paths like `/tmp/...`.
 
@@ -193,8 +195,10 @@ URL:
 
 ## Text Fallback
 
-If a card cannot be sent, use compact plain text. This is not a card and should
-not be described as one:
+If a card cannot be sent, use compact ordered-list Markdown. This is not a card
+and should not be described as one. Use 4 ordinary spaces before each nested
+bullet so Feishu keeps the indentation and usually renders the bullets as
+hollow circles:
 
 ```text
 升级结论
@@ -203,17 +207,17 @@ not be described as one:
 范围：<context>
 
 重点差异
-<title>
-之前行为：...
-现在行为：...
-触发条件：...
-影响：...
-处理方式：...
+1. INSERT 类任务超时改由 insert_timeout 控制
+    - 之前行为：3.3.22 没有独立的 insert_timeout 变量，插入类任务更容易跟 query_timeout 或各自任务属性绑定。
+    - 现在行为：4.0.10 有 insert_timeout，默认 14400 秒。
+    - 触发条件：INSERT、UPDATE、DELETE、CTAS、MV refresh、统计信息收集、PIPE 等 insert-like task。
+    - 影响：旧版本里通过调 query_timeout 控制这些任务的方式，升级后可能不再覆盖，任务超时可能变长或行为不符合预期。
+    - 处理方式：升级前检查作业、MV、PIPE、统计任务是否依赖 query_timeout；需要时显式设置 insert_timeout，或给 MV/task property 单独配置。
 
-<title>
-之前行为：...
-现在行为：...
-触发条件：...
-影响：...
-处理方式：...
+2. MV refresh 对过滤数据默认更严格
+    - 之前行为：3.3.22 使用 enable_mv_refresh_insert_strict 这类旧逻辑，默认不完全等价于 4.0 的严格过滤失败策略。
+    - 现在行为：4.0.10 使用 mv_refresh_fail_on_filter_data=true，并通过 insert_max_filter_ratio 控制过滤数据容忍度。
+    - 触发条件：MV refresh 过程中发生数据过滤、类型转换失败、脏数据、外表分区数据不一致等。
+    - 影响：升级后原来能刷新的 MV 可能刷新失败，或者需要显式设置过滤比例。
+    - 处理方式：重点回归高频 MV refresh；必要时设置 insert_max_filter_ratio 或调整 mv_refresh_fail_on_filter_data。
 ```
