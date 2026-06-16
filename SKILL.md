@@ -102,6 +102,14 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 
 最终给用户的升级结论必须使用中文，不要只复述脚本扫描结果。默认先给总判断，再按“差异条目”一条一条展开：
 
+硬性要求：
+- 大版本或跨 minor 升级默认输出 5-12 条“重点差异”；不要只给 3-4 条摘要。
+- 每条重点差异必须多行展开，至少包含：之前行为、现在行为、触发条件、影响、处理方式。
+- 不要把多个互不相关的变化合并成一句，例如“配置默认值变化：a、b、c”。每个会影响用户操作的变化都要独立成条。
+- 自动扫描的 finding 数量、commit 数量、源码域数量只能作为内部筛选依据，不能作为最终结论主体。
+- 优先输出用户能直接验证或调整的行为变化：SQL 语义、配置默认值、配置移除/改名、系统变量、MV 激活/刷新/改写、导入/事务、存储/DataCache、客户端兼容、滚动升级风险。
+- 如果发现“源版本所在分支已有修复但目标版本缺失”，单独作为“版本选择风险”写清楚受影响场景；不要只列 PR 号或一句“建议升更高 patch”。
+
 ```text
 升级结论：
 - 是否建议升级，是否存在明确阻断项。
@@ -122,8 +130,11 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 
 差异条目的粒度应该面向用户能理解和执行的行为变化。例如：
 - 配置默认值变化：写清楚默认值从什么变成什么、哪些 SQL/MV/表 schema 会受影响、需要设置哪个 FE/BE 配置规避。
+- 配置移除或改名：写清楚旧配置是否还会被配置文件容忍、动态 `ADMIN SET CONFIG` 是否会失败、替代配置是什么。
 - SQL 行为变化：写清楚相较旧版本的解析或执行差异、新版本与 MySQL 是否对齐、需要怎么改 SQL。
 - MV 风险：写清楚为什么升级后激活、刷新、schema check 或 query rewrite 可能变化，并给出可执行的 `ALTER MATERIALIZED VIEW ... ACTIVE` 或相关配置建议。
+- 导入/事务变化：写清楚影响 Stream Load、Routine Load、Flink/Spark Connector、Broker Load 还是 INSERT，并给出压测或参数建议。
+- 存储/DataCache 变化：写清楚缓存路径、容量、水位、预加载、compaction 或 storage volume 行为变化，以及需要检查的 `be.conf`/`fe.conf` 项。
 - 协议、存储、导入、权限等风险：只在源码证据足够时输出，并说明滚动升级或混部验证要点。
 
 不要输出 Java/C++ 代码片段。需要示例时优先给 SQL、配置、错误信息、输入输出行为对比。
