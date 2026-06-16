@@ -147,20 +147,55 @@ User-facing conclusion should say:
 
 ## Final Report Shape
 
-Every user-facing risk item must keep this shape:
+Every user-facing risk item must expose old behavior, new behavior, trigger,
+impact, and handling steps. For normal Codex/Markdown answers, the exact visual
+layout can follow the conversation context.
 
-【1】Risk item title
-　　之前行为:
-　　现在行为:
-　　触发条件:
+When the user says the result is for Feishu/Lark, group posts, Feishu docs, or
+`lark-cli` publishing, use Feishu output mode:
+
+```text
+升级结论
+版本：<base> -> <target>
+判断：<可以灰度升级 / 不建议直升 / 存在阻断项>
+范围：<whether real config/system variables were provided>
+
+重点差异
+────────────────
+【01｜高｜导入】Risk item title
+　　旧行为:
+　　新行为:
+　　触发:
 　　影响:
-　　处理方式:
+　　处理:
 
-Use `【1】`, `【2】`, `【10】` style numbering for user-facing "重点差异" items.
-Use two full-width spaces (`　　`) before each field line to preserve visual
-indentation in Feishu/Lark posts. Do not use Markdown ordered lists like
-`1.` / `10.` and do not nest `-` or `*` bullets under each item, because Feishu
-may reparse double-digit ordered-list items and drop indentation.
+────────────────
+【02｜中｜MV】Risk item title
+　　旧行为:
+　　新行为:
+　　触发:
+　　影响:
+　　处理:
+
+建议动作
+【升级前】...
+【灰度】...
+【回滚】...
+```
+
+Feishu output mode rules:
+
+- Use two-digit item numbers and title tags: `【01｜高｜导入】`.
+- Use risk levels: `阻断`, `高`, `中`, `低`, `需验证`.
+- Use short domains such as `导入`, `MV`, `配置`, `变量`, `缓存`, `存储`, `客户端`, `协议`, `权限`, `查询`.
+- Use two full-width spaces (`　　`) before field lines.
+- Do not use Markdown ordered lists like `1.` / `10.`.
+- Do not nest `-` or `*` bullets under each risk item.
+- Use `────────────────` between risk items, not Markdown `---`.
+- Use inline code only for short config names, variables, headers, or SQL keywords.
+  Do not wrap long `key=value` strings, long paths, or whole sentences in code spans.
+- Keep each field compact; when handling has multiple steps, write `1）...；2）...；3）...。`
+  instead of bullet lists.
 
 Do not collapse those fields into a single paragraph. The short answer can
 limit the number of items, but each selected item must still expose the old
