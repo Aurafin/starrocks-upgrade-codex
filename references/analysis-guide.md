@@ -149,11 +149,18 @@ User-facing conclusion should say:
 
 Every user-facing risk item must keep this shape:
 
-- 之前行为:
-- 现在行为:
-- 触发条件:
-- 影响:
-- 处理方式:
+【1】Risk item title
+　　之前行为:
+　　现在行为:
+　　触发条件:
+　　影响:
+　　处理方式:
+
+Use `【1】`, `【2】`, `【10】` style numbering for user-facing "重点差异" items.
+Use two full-width spaces (`　　`) before each field line to preserve visual
+indentation in Feishu/Lark posts. Do not use Markdown ordered lists like
+`1.` / `10.` and do not nest `-` or `*` bullets under each item, because Feishu
+may reparse double-digit ordered-list items and drop indentation.
 
 Do not collapse those fields into a single paragraph. The short answer can
 limit the number of items, but each selected item must still expose the old
