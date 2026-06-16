@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from sr_upgrade_compare import (
     classify_source_domains,
     classify_commit,
+    compare_field_maps,
     config_conflicts,
     extract_pr_numbers,
     normalize_value,
@@ -16,6 +20,7 @@ from sr_upgrade_compare import (
     parse_system_vars_content,
     risk_for_name,
     scan_feature_impact_findings,
+    scan_public_surface_findings,
 )
 
 
@@ -92,6 +97,34 @@ class TestRiskAndTier(unittest.TestCase):
 
     def test_bool_flip_medium(self):
         self.assertEqual(risk_for_name("unknown_toggle", "false", "true"), "medium")
+
+    def test_var_attr_metadata_change_without_default_change(self):
+        old = {
+            "query_timeout": {
+                "field_name": "queryTimeoutS",
+                "annotation_name": "query_timeout",
+                "value": "300",
+                "type": "int",
+                "mutable": None,
+                "flag_names": [],
+            }
+        }
+        new = {
+            "query_timeout": {
+                "field_name": "queryTimeoutS",
+                "annotation_name": "query_timeout",
+                "value": "300",
+                "type": "int",
+                "mutable": None,
+                "flag": "VariableMgr.SESSION_ONLY",
+                "flag_names": ["SESSION_ONLY"],
+            }
+        }
+        findings = compare_field_maps(old, new, "session_variable", "SessionVariable.java")
+        metadata = [item for item in findings if item["type"] == "session_variable_metadata_changed"]
+        self.assertEqual(len(metadata), 1)
+        self.assertEqual(metadata[0]["risk"], "high")
+        self.assertIn("flag_names", metadata[0]["changed_metadata"])
 
     def test_classify_mv_commit_high(self):
         tier, reason = classify_commit(
@@ -287,6 +320,74 @@ class TestFeatureImpactScan(unittest.TestCase):
                 ],
             )
             self.assertEqual({item["type"] for item in findings}, {"feature_behavior_changed"})
+
+    def test_public_surface_added_finds_headers_and_properties(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            self._run_git(repo, "init")
+            self._run_git(repo, "config", "user.email", "test@example.com")
+            self._run_git(repo, "config", "user.name", "Test")
+
+            header = repo / "be/src/http/http_common.h"
+            props = repo / "fe/fe-core/src/main/java/com/starrocks/common/util/PropertyAnalyzer.java"
+            header.parent.mkdir(parents=True)
+            props.parent.mkdir(parents=True)
+            header.write_text("// headers\n", encoding="utf-8")
+            props.write_text("public class PropertyAnalyzer {}\n", encoding="utf-8")
+            base = self._commit_all(repo, "base")
+
+            header.write_text(
+                'static const std::string HTTP_ENABLE_NEW_LOAD_MODE = "enable_new_load_mode";\n',
+                encoding="utf-8",
+            )
+            props.write_text(
+                'public static final String PROPERTIES_NEW_TABLE_FEATURE = "new_table_feature";\n',
+                encoding="utf-8",
+            )
+            target = self._commit_all(repo, "target")
+
+            findings = scan_public_surface_findings(
+                repo,
+                base,
+                target,
+                [
+                    "be/src/http/http_common.h",
+                    "fe/fe-core/src/main/java/com/starrocks/common/util/PropertyAnalyzer.java",
+                ],
+            )
+            by_name = {item["name"]: item for item in findings}
+            self.assertEqual(by_name["enable_new_load_mode"]["surface"], "http_header")
+            self.assertEqual(by_name["new_table_feature"]["surface"], "sql_or_task_property")
+
+    def test_public_surface_added_skips_existing_literal_moved_to_new_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            self._run_git(repo, "init")
+            self._run_git(repo, "config", "user.email", "test@example.com")
+            self._run_git(repo, "config", "user.name", "Test")
+
+            old_header = repo / "be/src/http/old_headers.h"
+            new_header = repo / "be/src/http/http_common.h"
+            old_header.parent.mkdir(parents=True)
+            old_header.write_text(
+                'static const std::string HTTP_FORMAT = "format";\n',
+                encoding="utf-8",
+            )
+            base = self._commit_all(repo, "base")
+
+            new_header.write_text(
+                'static const std::string HTTP_FORMAT = "format";\n',
+                encoding="utf-8",
+            )
+            target = self._commit_all(repo, "target")
+
+            findings = scan_public_surface_findings(
+                repo,
+                base,
+                target,
+                ["be/src/http/http_common.h"],
+            )
+            self.assertEqual(findings, [])
 
 
 if __name__ == "__main__":

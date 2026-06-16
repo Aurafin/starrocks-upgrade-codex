@@ -86,6 +86,22 @@ First check `type`:
 - `feature_introduced`: base lacks the feature anchors and target contains them. It is valid to describe old behavior as "not supported / no such path".
 - `feature_behavior_changed`: both versions already contain the feature anchors. Do not say the feature is newly introduced. Explain the exact changed default, header, routing, timeout, queueing, or task path after reading the diff/source.
 
+Also read `public-surface-findings.json` when present. It is a discovery list of newly added user-visible knobs, not a conclusion. Group related entries by area, then trace usage before reporting.
+
+Public surface examples:
+
+- HTTP headers or REST parameters, especially Stream Load and transaction APIs
+- SQL, table, MV, load, pipe, scheduler, or task properties
+- New SQL grammar keywords or syntax
+
+For each candidate, ask:
+
+- Is it enabled by default or only opt-in?
+- Does it change existing behavior, or only add a new optional path?
+- Can an existing client accidentally send the new parameter name?
+- Does the property/header have performance, timeout, transaction, MV, storage, or compatibility impact?
+- Is there a config/variable to disable or preserve old behavior?
+
 ### INSERT-like task timeout
 
 Search keys:

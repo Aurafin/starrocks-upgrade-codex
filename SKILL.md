@@ -64,11 +64,12 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 - `upgrade-report.md`
 - `incompatibilities.json`
 - `feature-impact-findings.json`
+- `public-surface-findings.json`
 - `source-domain-summary.json`
 - `context-conflicts.json`，仅当用户提供配置或系统变量上下文时存在
 - `commits/tiered-*.json`
 
-4. 对每个 HIGH/CRITICAL 项和 `feature-impact-findings.json` 里的候选项做源码复核：
+4. 对每个 HIGH/CRITICAL 项、`feature-impact-findings.json` 和 `public-surface-findings.json` 里的候选项做源码复核：
 
 - 读自动扫描指向的源码文件。
 - 用 `rg` 查关键类、函数、配置名、变量名、协议字段或日志关键字。
@@ -86,6 +87,7 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 - SQL 变量定义：`SessionVariable`、`GlobalVariable`、`SysVariable` 的 `@VarAttr` 变化、alias/show/flag/mutable 变化
 - 关键源码模式：Thrift/protobuf、parser、auth、storage format、MV、type system 等高风险文件和关键词
 - 新增功能影响面：例如 `insert_timeout` 接管 INSERT-like task 超时、Stream Load `merge_commit`/batch write 引入后的性能和队列行为变化
+- 新增用户可见入口：HTTP header、Stream Load/load property、任务 property、表/MV property、SQL grammar keyword 等，作为新增功能候选而不是最终结论
 - 用户上下文命中：真实 `fe.conf`、`be.conf`、系统变量快照是否踩中被移除或默认值变化的配置/变量
 
 脚本是第一轮筛选，不是最终结论。最终回答必须结合源码复核。
@@ -113,6 +115,7 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 - 自动扫描的 finding 数量、commit 数量、源码域数量只能作为内部筛选依据，不能作为最终结论主体。
 - `feature-impact-findings.json` 里的候选项不能直接照抄，但必须逐项判断是否应该进入“重点差异”；如果丢弃，要有源码复核后的理由。
 - 区分 `feature_introduced` 和 `feature_behavior_changed`：只有 base 不存在、target 存在时才写“新增功能”；两边都存在时只能写“已有功能行为变化候选”，必须说明具体变更点，不能套用跨 minor 的旧/新行为结论。
+- `public-surface-findings.json` 只表示“新增用户可见入口”，不是自动等于升级风险；必须回到实现代码判断它是否改变默认行为、需要用户配置、影响兼容性、影响性能，或只是新增可选能力。
 - 优先输出用户能直接验证或调整的行为变化：SQL 语义、配置默认值、配置移除/改名、系统变量、MV 激活/刷新/改写、导入/事务、存储/DataCache、客户端兼容、滚动升级风险。
 - 如果发现“源版本所在分支已有修复但目标版本缺失”，单独作为“版本选择风险”写清楚受影响场景；不要只列 PR 号或一句“建议升更高 patch”。
 

@@ -323,6 +323,63 @@ FEATURE_IMPACT_RULES = [
     },
 ]
 
+PUBLIC_SURFACE_RULES = [
+    {
+        "surface": "http_header",
+        "risk": "medium",
+        "impact": {"data": False, "behavior": True, "operational": True, "rolling_upgrade": False},
+        "patterns": [
+            "be/src/http/**",
+            "fe/fe-core/src/main/java/com/starrocks/http/**",
+            "fe/fe-core/src/main/java/com/starrocks/load/streamload/**",
+        ],
+        "regexes": [
+            r'(?:static\s+const\s+std::string|public\s+static\s+final\s+String)\s+(HTTP_[A-Z0-9_]+)\s*=\s*"([^"]+)"',
+        ],
+    },
+    {
+        "surface": "sql_or_task_property",
+        "risk": "medium",
+        "impact": {"data": False, "behavior": True, "operational": True, "rolling_upgrade": False},
+        "patterns": [
+            "fe/fe-core/src/main/java/com/starrocks/common/util/PropertyAnalyzer.java",
+            "fe/fe-core/src/main/java/com/starrocks/sql/ast/**",
+            "fe/fe-core/src/main/java/com/starrocks/load/**",
+            "fe/fe-core/src/main/java/com/starrocks/scheduler/**",
+            "fe/fe-core/src/main/java/com/starrocks/alter/**",
+        ],
+        "regexes": [
+            r'(?:public\s+)?(?:static\s+)?(?:final\s+)?String\s+([A-Z0-9_]*(?:PROPERTY|PROPERTIES)[A-Z0-9_]*)\s*=\s*"([^"]+)"',
+            r'(?:public\s+static\s+final\s+String|private\s+static\s+final\s+String)\s+([A-Z0-9_]+)\s*=\s*"((?:session|task|properties?)\.[^"]+)"',
+        ],
+    },
+    {
+        "surface": "sql_grammar_keyword",
+        "risk": "medium",
+        "impact": {"data": False, "behavior": True, "operational": False, "rolling_upgrade": False},
+        "patterns": [
+            "fe/fe-core/src/main/java/com/starrocks/sql/parser/*.g4",
+        ],
+        "regexes": [
+            r"^\s*([A-Z][A-Z0-9_]{2,})\s*:",
+        ],
+        "keyword_filter": {
+            "ADD",
+            "ALTER",
+            "CREATE",
+            "DROP",
+            "INSERT",
+            "SELECT",
+            "TABLE",
+            "WHERE",
+            "FROM",
+            "TRUE",
+            "FALSE",
+            "NULL",
+        },
+    },
+]
+
 SOURCE_DOMAIN_RULES = [
     {
         "domain": "config_and_variables",
@@ -383,6 +440,19 @@ SOURCE_DOMAIN_RULES = [
             "be/src/column/**",
             "be/src/serde/**",
             "be/src/types/**",
+            "be/src/fs/**",
+            "be/src/io/**",
+        ],
+    },
+    {
+        "domain": "cache_datacache",
+        "risk": "high",
+        "impact": {"data": False, "behavior": True, "operational": True, "rolling_upgrade": True},
+        "patterns": [
+            "be/src/cache/**",
+            "be/src/block_cache/**",
+            "be/src/datacache/**",
+            "be/src/storage/lake/persistent_index_cache.*",
         ],
     },
     {
@@ -400,6 +470,8 @@ SOURCE_DOMAIN_RULES = [
             "fe/fe-core/src/main/java/com/starrocks/server/**",
             "fe/fe-core/src/main/java/com/starrocks/persist/**",
             "fe/fe-core/src/main/java/com/starrocks/alter/**",
+            "fe/fe-core/src/main/java/com/starrocks/lake/**",
+            "fe/fe-core/src/main/java/com/starrocks/warehouse/**",
         ],
     },
     {
@@ -410,9 +482,11 @@ SOURCE_DOMAIN_RULES = [
             "fe/fe-core/src/main/java/com/starrocks/transaction/**",
             "fe/fe-core/src/main/java/com/starrocks/load/**",
             "fe/fe-core/src/main/java/com/starrocks/load/loadv2/**",
+            "fe/fe-core/src/main/java/com/starrocks/http/**",
             "be/src/runtime/load_channel*",
             "be/src/runtime/tablets_channel*",
             "be/src/service/*load*",
+            "be/src/http/**",
         ],
     },
     {
@@ -458,6 +532,7 @@ SOURCE_DOMAIN_RULES = [
         "patterns": [
             "fe/fe-core/src/main/java/com/starrocks/scheduler/**",
             "fe/fe-core/src/main/java/com/starrocks/task/**",
+            "fe/fe-core/src/main/java/com/starrocks/statistic/**",
         ],
     },
 ]
@@ -928,6 +1003,7 @@ def field_metadata(field: dict[str, Any]) -> dict[str, Any]:
         "flag": field.get("flag"),
         "flag_names": field.get("flag_names", []),
         "mutable": field.get("mutable"),
+        "deprecated": field.get("deprecated"),
     }
 
 
@@ -965,6 +1041,34 @@ def compare_field_maps(old: dict[str, dict[str, Any]], new: dict[str, dict[str, 
                     "new_metadata": field_metadata(new[name]),
                     "risk": "medium",
                     "impact": {"data": False, "behavior": False, "operational": True, "rolling_upgrade": False},
+                }
+            )
+        old_meta = field_metadata(old[name])
+        new_meta = field_metadata(new[name])
+        old_meta_without_mutable = {k: v for k, v in old_meta.items() if k != "mutable"}
+        new_meta_without_mutable = {k: v for k, v in new_meta.items() if k != "mutable"}
+        if old_meta_without_mutable != new_meta_without_mutable:
+            changed_keys = sorted(
+                key for key in set(old_meta_without_mutable) | set(new_meta_without_mutable)
+                if old_meta_without_mutable.get(key) != new_meta_without_mutable.get(key)
+            )
+            risk = "high" if "flag_names" in changed_keys and {
+                "READ_ONLY",
+                "SESSION_ONLY",
+                "GLOBAL",
+                "INVISIBLE",
+                "DISABLE_FORWARD_TO_LEADER",
+            } & (set(old_meta.get("flag_names", [])) | set(new_meta.get("flag_names", []))) else "medium"
+            findings.append(
+                {
+                    "type": f"{source}_metadata_changed",
+                    "name": name,
+                    "file": file_path,
+                    "changed_metadata": changed_keys,
+                    "old_metadata": old_meta,
+                    "new_metadata": new_meta,
+                    "risk": risk,
+                    "impact": {"data": False, "behavior": True, "operational": True, "rolling_upgrade": False},
                 }
             )
     for name in sorted(set(new) - set(old)):
@@ -1068,6 +1172,14 @@ def ref_contains_keywords(repo: Path, ref: str, patterns: list[str], keywords: l
         if any(keyword.lower() in lowered for keyword in keywords):
             return True
     return False
+
+
+def literal_exists_at_ref(repo: Path, ref: str, literal: str, cache: dict[tuple[str, str], bool]) -> bool:
+    key = (ref, literal)
+    if key not in cache:
+        output = run_cmd(["git", "grep", "-F", "-l", "-e", literal, ref, "--"], cwd=repo, timeout=120)
+        cache[key] = bool(output)
+    return cache[key]
 
 
 def scan_pattern_findings(repo: Path, base_ref: str, target_ref: str, changed_files: list[str]) -> dict[str, list[dict[str, Any]]]:
@@ -1186,6 +1298,78 @@ def scan_feature_impact_findings(repo: Path, base_ref: str, target_ref: str, cha
                 "diff_preview": "\n".join(diff_previews),
             }
         )
+    return findings
+
+
+def extract_public_surface_values(line: str, rule: dict[str, Any]) -> list[dict[str, str]]:
+    values = []
+    ignored = set(rule.get("keyword_filter", set()))
+    for regex in rule["regexes"]:
+        for match in re.finditer(regex, line):
+            if len(match.groups()) >= 2:
+                symbol, value = match.group(1), match.group(2)
+            else:
+                symbol = match.group(1)
+                value = symbol.lower()
+            if symbol in ignored:
+                continue
+            if len(value) <= 1:
+                continue
+            values.append({"symbol": symbol, "value": value})
+    return values
+
+
+def scan_public_surface_findings(repo: Path, base_ref: str, target_ref: str, changed_files: list[str]) -> list[dict[str, Any]]:
+    findings = []
+    base_literal_cache: dict[tuple[str, str], bool] = {}
+    for rule in PUBLIC_SURFACE_RULES:
+        by_value: dict[str, dict[str, Any]] = {}
+        for file_path in changed_files:
+            if path_matches(file_path, SKIP_PATHS):
+                continue
+            if not any(fnmatch.fnmatch(file_path, pattern) for pattern in rule["patterns"]):
+                continue
+            diff = get_diff(repo, base_ref, target_ref, file_path)
+            if not diff:
+                continue
+            added, removed = diff_changed_lines(diff)
+            removed_values = {
+                item["value"]
+                for line in non_comment_changed_lines(removed)
+                for item in extract_public_surface_values(line, rule)
+            }
+            for line in non_comment_changed_lines(added):
+                for item in extract_public_surface_values(line, rule):
+                    value = item["value"]
+                    if value in removed_values:
+                        continue
+                    if literal_exists_at_ref(repo, base_ref, value, base_literal_cache):
+                        continue
+                    existing = by_value.setdefault(
+                        value,
+                        {
+                            "type": "public_surface_added",
+                            "name": value,
+                            "surface": rule["surface"],
+                            "risk": rule["risk"],
+                            "impact": rule["impact"],
+                            "symbols": [],
+                            "files": [],
+                            "diff_preview": [],
+                        },
+                    )
+                    if item["symbol"] not in existing["symbols"]:
+                        existing["symbols"].append(item["symbol"])
+                    if file_path not in existing["files"]:
+                        existing["files"].append(file_path)
+                    if len(existing["diff_preview"]) < 20:
+                        existing["diff_preview"].append(line)
+        for value in sorted(by_value):
+            finding = by_value[value]
+            finding["symbols"] = sorted(finding["symbols"])
+            finding["files"] = sorted(finding["files"])
+            finding["diff_preview"] = "\n".join(finding["diff_preview"])
+            findings.append(finding)
     return findings
 
 
@@ -1490,7 +1674,9 @@ def write_markdown_report(
     high = [f for f in findings if f.get("risk") in {"critical", "high"}]
     medium = [f for f in findings if f.get("risk") == "medium"]
     lines = [
-        "# StarRocks Upgrade Comparison",
+        "# StarRocks Upgrade Scanner Report",
+        "",
+        "> This is an automated scanner artifact, not the final user-facing upgrade conclusion. Codex must read source and verify behavior before reporting.",
         "",
         f"- Base: {summary['base']['input']} -> {summary['base']['resolved']} ({summary['base']['sha'][:12]})",
         f"- Target: {summary['target']['input']} -> {summary['target']['resolved']} ({summary['target']['sha'][:12]})",
@@ -1516,6 +1702,10 @@ def write_markdown_report(
                     lines.append(f"  - ... {len(files) - 6} more files")
             if item.get("keywords"):
                 lines.append(f"  - Keywords: {', '.join(item.get('keywords', [])[:8])}")
+            if item.get("surface"):
+                lines.append(f"  - Surface: {item.get('surface')}")
+            if item.get("symbols"):
+                lines.append(f"  - Symbols: {', '.join(item.get('symbols', [])[:8])}")
             if item.get("before_behavior"):
                 lines.append(f"  - Before: {item.get('before_behavior')}")
             if item.get("now_behavior"):
@@ -1570,6 +1760,7 @@ def write_markdown_report(
             "",
             "- Trace every HIGH/CRITICAL finding with rg before final user-facing conclusions.",
             "- Read feature-impact-findings.json first when present; these are behavior/performance candidates that must be expanded for the user.",
+            "- Read public-surface-findings.json when present; group added headers/properties/grammar keywords into user-visible feature candidates before deciding what to report.",
             "- For MV findings, inspect AlterJobMgr, AlterMVJobExecutor, MaterializedView, and PartitionBasedMvRefreshProcessor flows.",
             "- For load findings, inspect Stream Load headers, batch write / merge_commit code paths, and transaction/load timeout behavior.",
             "- For config conflicts, check whether the config is mutable and whether restart is required.",
@@ -1634,12 +1825,17 @@ def run_compare(args: argparse.Namespace) -> dict[str, Any]:
     save_json({"feature_impact": feature_impact_findings}, output_dir / "feature-impact-findings.json")
     if feature_impact_findings:
         pattern_findings["feature_impact"] = feature_impact_findings
+    public_surface_findings = scan_public_surface_findings(repo, base["resolved"], target["resolved"], changed_files)
+    save_json({"public_surface": public_surface_findings}, output_dir / "public-surface-findings.json")
+    if public_surface_findings:
+        pattern_findings["public_surface"] = public_surface_findings
     all_findings = flatten_findings(config_findings, pattern_findings)
     findings_summary = summarize_findings(all_findings)
     incompatibilities = {
         "config_findings": config_findings,
         "pattern_findings": pattern_findings,
         "feature_impact_findings": feature_impact_findings,
+        "public_surface_findings": public_surface_findings,
         "all_findings": all_findings,
         "summary": findings_summary,
     }
