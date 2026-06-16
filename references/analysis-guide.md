@@ -152,50 +152,36 @@ impact, and handling steps. For normal Codex/Markdown answers, the exact visual
 layout can follow the conversation context.
 
 When the user says the result is for Feishu/Lark, group posts, Feishu docs, or
-`lark-cli` publishing, use Feishu output mode:
+`lark-cli` publishing, read `references/lark-card-output.md`. Prefer a real
+Feishu/Lark `interactive` message card for chat output. Use plain text only as a
+fallback when the user only wants copyable text, no send target is available, or
+interactive cards cannot be sent.
 
-```text
-升级结论
-版本：<base> -> <target>
-判断：<可以灰度升级 / 不建议直升 / 存在阻断项>
-范围：<whether real config/system variables were provided>
+Feishu card mode should use real card sections:
 
-重点差异
-────────────────
-【01｜高｜导入】Risk item title
-　　旧行为:
-　　新行为:
-　　触发:
-　　影响:
-　　处理:
-
-────────────────
-【02｜中｜MV】Risk item title
-　　旧行为:
-　　新行为:
-　　触发:
-　　影响:
-　　处理:
-
-建议动作
-【升级前】...
-【灰度】...
-【回滚】...
-```
+- Header: `StarRocks 升级评估｜<base> -> <target>`
+- Summary `div`: version, judgment, scope, key risk domains
+- Per-risk title: `【NN｜等级｜领域】Risk item title`
+- Per-risk `fields`: old/new and trigger/impact in two-column card fields
+- Per-risk full-width `div`: handling steps
+- Optional action button only for real URLs
+- Split after 6 risk items per card
 
 Feishu output mode rules:
 
+- For chat messages, do not pretend plain text is a card. Generate interactive
+  card JSON and send it with `lark-cli im +messages-send --msg-type interactive`
+  after explicit approval.
 - Use two-digit item numbers and title tags: `【01｜高｜导入】`.
 - Use risk levels: `阻断`, `高`, `中`, `低`, `需验证`.
 - Use short domains such as `导入`, `MV`, `配置`, `变量`, `缓存`, `存储`, `客户端`, `协议`, `权限`, `查询`.
-- Use two full-width spaces (`　　`) before field lines.
-- Do not use Markdown ordered lists like `1.` / `10.`.
-- Do not nest `-` or `*` bullets under each risk item.
-- Use `────────────────` between risk items, not Markdown `---`.
 - Use inline code only for short config names, variables, headers, or SQL keywords.
   Do not wrap long `key=value` strings, long paths, or whole sentences in code spans.
 - Keep each field compact; when handling has multiple steps, write `1）...；2）...；3）...。`
   instead of bullet lists.
+- Text fallback only: use two full-width spaces (`　　`) before field lines, avoid
+  Markdown ordered lists like `1.` / `10.`, avoid nested `-` or `*` bullets, and
+  use `────────────────` between risk items.
 
 Do not collapse those fields into a single paragraph. The short answer can
 limit the number of items, but each selected item must still expose the old
