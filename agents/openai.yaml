@@ -1,0 +1,4 @@
+interface:
+  display_name: "StarRocks 升级差异分析"
+  short_description: "基于源码比较 StarRocks 版本升级差异，可叠加真实配置和系统变量上下文"
+  default_prompt: "使用 $starrocks-upgrade-codex 比较我的 StarRocks 基准版本和目标版本，分析升级风险。"
