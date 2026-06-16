@@ -111,6 +111,8 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 硬性要求：
 - 大版本或跨 minor 升级默认输出 5-12 条“重点差异”；不要只给 3-4 条摘要。
 - 每条重点差异必须多行展开，至少包含：之前行为、现在行为、触发条件、影响、处理方式。
+- 不允许把“之前行为 / 现在行为 / 触发条件 / 影响 / 处理方式”压缩成一段风险描述；最终回答里必须显式保留这些字段名。
+- 如果同一主题下包含多个独立行为变化，拆成多个条目，不要只写成一个“某模块变化较大”的概括。
 - 不要把多个互不相关的变化合并成一句，例如“配置默认值变化：a、b、c”。每个会影响用户操作的变化都要独立成条。
 - 自动扫描的 finding 数量、commit 数量、源码域数量只能作为内部筛选依据，不能作为最终结论主体。
 - `feature-impact-findings.json` 里的候选项不能直接照抄，但必须逐项判断是否应该进入“重点差异”；如果丢弃，要有源码复核后的理由。
@@ -126,8 +128,8 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 
 重点差异：
 1. <变化点名称>
-   - 之前行为：说明基准版本的行为。
-   - 现在行为：说明目标版本的新行为。
+   - 之前行为：说明基准版本的行为；如果基准版本没有该能力，明确写“旧版本没有该路径/参数/语义”。
+   - 现在行为：说明目标版本的新行为；写出默认值、参数名、开关名或用户可见入口。
    - 触发条件：什么 SQL、配置、Schema、MV、导入、查询或运行场景会触发。
    - 影响：可能出现的报错、结果变化、性能变化、兼容性风险或运维影响。
    - 例子：只有能帮助用户理解时才给 SQL、错误信息或匹配示例；不要每条都强行给例子。
@@ -144,6 +146,7 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 - MV 风险：写清楚为什么升级后激活、刷新、schema check 或 query rewrite 可能变化，并给出可执行的 `ALTER MATERIALIZED VIEW ... ACTIVE` 或相关配置建议。
 - 导入/事务变化：写清楚影响 Stream Load、Routine Load、Flink/Spark Connector、Broker Load 还是 INSERT，并给出压测或参数建议。
 - 新增功能影响：即使是可选功能，也要说明“旧版本没有 / 新版本支持后如何触发 / 不适用场景有什么副作用 / 如何关闭或验证”。例如 Stream Load `enable_merge_commit=true` 可能引入合并等待、队列压力或小批低延迟场景性能下降；3.4+ 的 INSERT-like task 超时可能改由 `insert_timeout` 控制，旧的 `query_timeout` 调整不再覆盖 `UPDATE`、`DELETE`、`CTAS`、MV refresh、统计收集、PIPE 等任务。
+- 系统变量和任务属性变化：必须写清旧变量/属性是否还生效、新变量默认值、哪些任务路径改用新变量。例如 `insert_timeout` 要写出旧行为、目标默认 `14400` 秒、影响的任务类型，以及如何通过 session/global、MV/session property 或任务属性设置。
 - 存储/DataCache 变化：写清楚缓存路径、容量、水位、预加载、compaction 或 storage volume 行为变化，以及需要检查的 `be.conf`/`fe.conf` 项。
 - 协议、存储、导入、权限等风险：只在源码证据足够时输出，并说明滚动升级或混部验证要点。
 

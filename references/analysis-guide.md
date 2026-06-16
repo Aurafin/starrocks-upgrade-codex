@@ -147,6 +147,18 @@ User-facing conclusion should say:
 
 ## Final Report Shape
 
+Every user-facing risk item must keep this shape:
+
+- 之前行为:
+- 现在行为:
+- 触发条件:
+- 影响:
+- 处理方式:
+
+Do not collapse those fields into a single paragraph. The short answer can
+limit the number of items, but each selected item must still expose the old
+behavior, new behavior, trigger, impact, and handling steps.
+
 Prioritize:
 
 1. Blockers and HIGH/CRITICAL risks
@@ -156,4 +168,6 @@ Prioritize:
 5. Medium and low findings
 6. PR/commit summary
 
-Keep user-facing output short. Put detailed raw artifacts in the output directory.
+Keep user-facing output short by choosing fewer, higher-value items, not by
+removing the before/now/trigger/impact/handling fields. Put detailed raw
+artifacts in the output directory.
