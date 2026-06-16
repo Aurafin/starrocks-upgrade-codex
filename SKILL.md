@@ -15,6 +15,7 @@ description: 基于本地 StarRocks 源码仓库比较两个版本、分支、ta
 - 支持用户直接贴文本。如果用户贴了配置或变量输出，先把原文保存为临时文件，再传给脚本。
 - 如果用户只给版本号，例如 `3.3.16 -> 3.5.17`，也要直接运行比较并输出通用升级风险。
 - 对 HIGH/CRITICAL 结论必须回到源码阅读和 `rg` 追调用链，不能只引用自动扫描结果。
+- 对新增功能带来的行为、性能、超时、队列或客户端使用方式变化，要当成独立升级差异输出；不要只看配置默认值是否变化。
 
 ## 支持输入
 
@@ -62,11 +63,12 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 - `summary.json`
 - `upgrade-report.md`
 - `incompatibilities.json`
+- `feature-impact-findings.json`
 - `source-domain-summary.json`
 - `context-conflicts.json`，仅当用户提供配置或系统变量上下文时存在
 - `commits/tiered-*.json`
 
-4. 对每个 HIGH/CRITICAL 项做源码复核：
+4. 对每个 HIGH/CRITICAL 项和 `feature-impact-findings.json` 里的候选项做源码复核：
 
 - 读自动扫描指向的源码文件。
 - 用 `rg` 查关键类、函数、配置名、变量名、协议字段或日志关键字。
@@ -83,6 +85,7 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 - BE 配置定义：`be/src/common/config.h` 的 `CONF_*` 宏变化
 - SQL 变量定义：`SessionVariable`、`GlobalVariable`、`SysVariable` 的 `@VarAttr` 变化、alias/show/flag/mutable 变化
 - 关键源码模式：Thrift/protobuf、parser、auth、storage format、MV、type system 等高风险文件和关键词
+- 新增功能影响面：例如 `insert_timeout` 接管 INSERT-like task 超时、Stream Load `merge_commit`/batch write 引入后的性能和队列行为变化
 - 用户上下文命中：真实 `fe.conf`、`be.conf`、系统变量快照是否踩中被移除或默认值变化的配置/变量
 
 脚本是第一轮筛选，不是最终结论。最终回答必须结合源码复核。
@@ -97,6 +100,7 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 - Thrift/protobuf 协议变化
 - parser grammar 或保留字变化
 - storage format、tablet metadata、rowset/segment 编码变化
+- 新增功能影响导入、事务、超时、队列、MV 刷新、统计任务或客户端行为
 
 ## 输出要求
 
@@ -107,6 +111,7 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 - 每条重点差异必须多行展开，至少包含：之前行为、现在行为、触发条件、影响、处理方式。
 - 不要把多个互不相关的变化合并成一句，例如“配置默认值变化：a、b、c”。每个会影响用户操作的变化都要独立成条。
 - 自动扫描的 finding 数量、commit 数量、源码域数量只能作为内部筛选依据，不能作为最终结论主体。
+- `feature-impact-findings.json` 里的候选项不能直接照抄，但必须逐项判断是否应该进入“重点差异”；如果丢弃，要有源码复核后的理由。
 - 优先输出用户能直接验证或调整的行为变化：SQL 语义、配置默认值、配置移除/改名、系统变量、MV 激活/刷新/改写、导入/事务、存储/DataCache、客户端兼容、滚动升级风险。
 - 如果发现“源版本所在分支已有修复但目标版本缺失”，单独作为“版本选择风险”写清楚受影响场景；不要只列 PR 号或一句“建议升更高 patch”。
 
@@ -134,6 +139,7 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 - SQL 行为变化：写清楚相较旧版本的解析或执行差异、新版本与 MySQL 是否对齐、需要怎么改 SQL。
 - MV 风险：写清楚为什么升级后激活、刷新、schema check 或 query rewrite 可能变化，并给出可执行的 `ALTER MATERIALIZED VIEW ... ACTIVE` 或相关配置建议。
 - 导入/事务变化：写清楚影响 Stream Load、Routine Load、Flink/Spark Connector、Broker Load 还是 INSERT，并给出压测或参数建议。
+- 新增功能影响：即使是可选功能，也要说明“旧版本没有 / 新版本支持后如何触发 / 不适用场景有什么副作用 / 如何关闭或验证”。例如 Stream Load `enable_merge_commit=true` 可能引入合并等待、队列压力或小批低延迟场景性能下降；3.4+ 的 INSERT-like task 超时可能改由 `insert_timeout` 控制，旧的 `query_timeout` 调整不再覆盖 `UPDATE`、`DELETE`、`CTAS`、MV refresh、统计收集、PIPE 等任务。
 - 存储/DataCache 变化：写清楚缓存路径、容量、水位、预加载、compaction 或 storage volume 行为变化，以及需要检查的 `be.conf`/`fe.conf` 项。
 - 协议、存储、导入、权限等风险：只在源码证据足够时输出，并说明滚动升级或混部验证要点。
 

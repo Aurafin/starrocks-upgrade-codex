@@ -23,6 +23,7 @@ Treat these as higher risk until source tracing proves otherwise:
 - Removed config or variable that may still exist in user `fe.conf` or `be.conf`
 - Removed or renamed `@VarAttr` system variable that may still exist in `SHOW VARIABLES`, `SHOW GLOBAL VARIABLES`, SQL init scripts, user properties, MV properties, or automation using `SET GLOBAL`
 - Default value flips for optimizer, MV rewrite, timeout, memory, compaction, storage, or type conversion behavior
+- New feature paths that change timeout ownership, buffering, queueing, commit behavior, or client parameters even when the feature is opt-in
 - Protocol field removal, required field addition, enum renumbering, or service signature change
 - Storage format version, tablet metadata, rowset/segment encoding, or compression behavior change
 - MV refresh, rewrite, partition mapping, schema compatibility, reload, activation, or inactive logic changes
@@ -75,6 +76,53 @@ Always ask:
 - Can existing MVs become inactive after FE restart or leader transfer?
 - Can query rewrite silently stop matching?
 - Does rolling upgrade create old/new FE or BE mixed behavior?
+
+## Feature Impact Checks
+
+For `feature-impact-findings.json`, treat each item as a candidate that needs source verification and a user-facing behavior entry.
+
+### INSERT-like task timeout
+
+Search keys:
+
+- `insert_timeout`
+- `INSERT_TIMEOUT`
+- `setInsertTimeout`
+- `MV_SESSION_INSERT_TIMEOUT`
+- `task.insert_timeout`
+- `isExecLoadType`
+
+Check whether the target version routes `INSERT`, `UPDATE`, `DELETE`, `CTAS`, MV refresh, statistics collection, PIPE, or scheduler tasks through `insert_timeout` instead of `query_timeout`.
+
+User-facing conclusion should say:
+
+- Before: which jobs followed `query_timeout` or old task properties.
+- Now: which jobs use `insert_timeout`, including the default when visible in `SessionVariable`.
+- Trigger: SQL/task/MV/PIPE paths that can be affected.
+- Impact: old `query_timeout` tuning may no longer bound these jobs; timeouts can become longer or different than expected.
+- Handling: set `insert_timeout` explicitly through session/global defaults, MV/session properties, task properties, PIPE properties, or SQL hints where supported.
+
+### Stream Load merge_commit / batch write
+
+Search keys:
+
+- `enable_merge_commit`
+- `merge_commit`
+- `merge_commit_async`
+- `merge_commit_interval_ms`
+- `merge_commit_parallel`
+- `enable_batch_write`
+- `batch_write`
+
+Check Stream Load HTTP headers, FE batch-write scheduling, BE batch-write execution, transaction state polling, queue/thread-pool configs, and response behavior.
+
+User-facing conclusion should say:
+
+- Before: old versions do not route Stream Load through merge commit/batch write.
+- Now: target version can accept merge-commit headers and route loads through batching/merge-commit queues.
+- Trigger: clients/connectors setting `enable_merge_commit=true` or related headers/configs.
+- Impact: suitable for many small concurrent writes, but unsuitable scenarios can add buffering/wait time, queue pressure, commit delay, or performance regression.
+- Handling: inventory client headers, pressure-test enabled/disabled paths, tune batch size/concurrency/interval, and keep a rollback switch by stopping `enable_merge_commit`.
 
 ## Final Report Shape
 

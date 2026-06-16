@@ -41,6 +41,7 @@ HIGH_RISK_NAMES = {
     "enable_materialized_view_union_rewrite",
     "enable_materialized_view_rewrite_or_error",
     "query_timeout",
+    "insert_timeout",
     "pipeline_dop",
     "parallel_fragment_exec_instance_num",
     "prefer_compute_node",
@@ -82,6 +83,7 @@ BEHAVIOR_IMPACT_NAMES = {
     "enable_materialized_view_union_rewrite",
     "enable_materialized_view_rewrite_or_error",
     "query_timeout",
+    "insert_timeout",
     "pipeline_dop",
     "parallel_fragment_exec_instance_num",
     "prefer_compute_node",
@@ -197,6 +199,71 @@ SCANNER_PATTERNS = {
         "impact": {"data": True, "behavior": True},
     },
 }
+
+FEATURE_IMPACT_RULES = [
+    {
+        "id": "insert_timeout_controls_insert_like_tasks",
+        "title": "INSERT-like task timeout is controlled by insert_timeout",
+        "risk": "high",
+        "impact": {"data": False, "behavior": True, "operational": True, "rolling_upgrade": False},
+        "patterns": [
+            "fe/fe-core/src/main/java/com/starrocks/qe/SessionVariable.java",
+            "fe/fe-core/src/main/java/com/starrocks/qe/ConnectContext.java",
+            "fe/fe-core/src/main/java/com/starrocks/qe/StmtExecutor.java",
+            "fe/fe-core/src/main/java/com/starrocks/transaction/TransactionStmtExecutor.java",
+            "fe/fe-core/src/main/java/com/starrocks/scheduler/PartitionBasedMvRefreshProcessor.java",
+            "fe/fe-core/src/main/java/com/starrocks/scheduler/TaskRun.java",
+            "fe/fe-core/src/main/java/com/starrocks/load/pipe/**",
+            "fe/fe-core/src/main/java/com/starrocks/statistic/**",
+            "fe/fe-core/src/main/java/com/starrocks/alter/**",
+            "fe/fe-core/src/main/java/com/starrocks/common/util/PropertyAnalyzer.java",
+        ],
+        "keywords": [
+            "insert_timeout",
+            "INSERT_TIMEOUT",
+            "setInsertTimeout",
+            "MV_SESSION_INSERT_TIMEOUT",
+            "isExecLoadType",
+            "task.insert_timeout",
+        ],
+        "before_behavior": "INSERT-like tasks may have followed query_timeout in the older version.",
+        "now_behavior": "Target code defines insert_timeout and uses it in INSERT/load-like execution paths; default is commonly 14400 seconds when present.",
+        "trigger": "INSERT/UPDATE/DELETE/CTAS, materialized view refresh, statistics collection, PIPE, or task properties that previously tuned query_timeout only.",
+        "impact_hint": "Old query_timeout tuning may no longer control these jobs. Jobs can wait longer than expected, time out differently, or require session/task/MV property changes.",
+        "handling_hint": "Check SHOW VARIABLES, user properties, MV properties, PIPE/task properties and SQL hints. Set insert_timeout explicitly where these jobs need a non-default timeout.",
+    },
+    {
+        "id": "stream_load_merge_commit_feature",
+        "title": "Stream Load merge_commit/batch write path is introduced or changed",
+        "risk": "high",
+        "impact": {"data": False, "behavior": True, "operational": True, "rolling_upgrade": True},
+        "patterns": [
+            "fe/fe-core/src/main/java/com/starrocks/load/batchwrite/**",
+            "fe/fe-core/src/main/java/com/starrocks/load/streamload/**",
+            "fe/fe-core/src/main/java/com/starrocks/common/Config.java",
+            "be/src/http/action/stream_load.cpp",
+            "be/src/http/http_common.h",
+            "be/src/runtime/batch_write/**",
+            "be/src/runtime/stream_load/**",
+            "be/src/runtime/exec_env.cpp",
+            "be/src/common/config.h",
+        ],
+        "keywords": [
+            "merge_commit",
+            "enable_merge_commit",
+            "merge_commit_async",
+            "merge_commit_interval_ms",
+            "merge_commit_parallel",
+            "enable_batch_write",
+            "batch write",
+        ],
+        "before_behavior": "Older versions do not have the Stream Load merge_commit/batch write execution path.",
+        "now_behavior": "Target code may accept Stream Load merge_commit headers and route requests through batch write / merge commit queues and transaction-state polling.",
+        "trigger": "Stream Load clients or connectors that set enable_merge_commit=true or related merge_commit headers/configs.",
+        "impact_hint": "Merge commit can improve many small concurrent loads, but unsuitable workloads can see extra buffering, commit wait, queue pressure, or latency/performance regression.",
+        "handling_hint": "Inventory Stream Load headers/client configs, verify batch size/concurrency/latency needs, pressure-test both enabled and disabled paths, and keep a rollback switch to stop setting enable_merge_commit.",
+    },
+]
 
 SOURCE_DOMAIN_RULES = [
     {
@@ -906,6 +973,18 @@ def diff_changed_lines(diff: str) -> tuple[list[str], list[str]]:
     return added, removed
 
 
+def keyword_lines(lines: list[str], keywords: list[str], limit: int) -> list[str]:
+    matched = []
+    lowered_keywords = [kw.lower() for kw in keywords]
+    for line in lines:
+        lowered = line.lower()
+        if any(keyword in lowered for keyword in lowered_keywords):
+            matched.append(line)
+            if len(matched) >= limit:
+                break
+    return matched
+
+
 def scan_pattern_findings(repo: Path, base_ref: str, target_ref: str, changed_files: list[str]) -> dict[str, list[dict[str, Any]]]:
     results: dict[str, list[dict[str, Any]]] = {}
     for scanner, spec in SCANNER_PATTERNS.items():
@@ -952,6 +1031,54 @@ def scan_pattern_findings(repo: Path, base_ref: str, target_ref: str, changed_fi
             )
         results[scanner] = scanner_results
     return results
+
+
+def scan_feature_impact_findings(repo: Path, base_ref: str, target_ref: str, changed_files: list[str]) -> list[dict[str, Any]]:
+    findings: list[dict[str, Any]] = []
+    for rule in FEATURE_IMPACT_RULES:
+        source_files = []
+        matched_keywords: set[str] = set()
+        diff_previews = []
+        lines_changed = 0
+        for file_path in changed_files:
+            if path_matches(file_path, SKIP_PATHS):
+                continue
+            if not any(fnmatch.fnmatch(file_path, pattern) for pattern in rule["patterns"]):
+                continue
+            diff = get_diff(repo, base_ref, target_ref, file_path)
+            if not diff:
+                continue
+            added, removed = diff_changed_lines(diff)
+            joined = "\n".join(added + removed)
+            file_keywords = sorted({kw for kw in rule["keywords"] if kw.lower() in joined.lower()})
+            if not file_keywords:
+                continue
+            source_files.append(file_path)
+            matched_keywords.update(file_keywords)
+            lines_changed += len(added) + len(removed)
+            if len(diff_previews) < 60:
+                diff_previews.extend(keyword_lines(removed + added, file_keywords, max(0, 60 - len(diff_previews))))
+        if not source_files:
+            continue
+        findings.append(
+            {
+                "type": "feature_impact_change",
+                "id": rule["id"],
+                "name": rule["title"],
+                "risk": rule["risk"],
+                "impact": rule["impact"],
+                "files": sorted(source_files),
+                "keywords": sorted(matched_keywords),
+                "lines_changed": lines_changed,
+                "before_behavior": rule["before_behavior"],
+                "now_behavior": rule["now_behavior"],
+                "trigger": rule["trigger"],
+                "impact_hint": rule["impact_hint"],
+                "handling_hint": rule["handling_hint"],
+                "diff_preview": "\n".join(diff_previews),
+            }
+        )
+    return findings
 
 
 def parse_conf_content(content: str | None) -> dict[str, str]:
@@ -1274,8 +1401,23 @@ def write_markdown_report(
                 lines.append(f"  - Value: {item.get('old_value')} -> {item.get('new_value')}")
             if item.get("file"):
                 lines.append(f"  - File: {item.get('file')}")
+            if item.get("files"):
+                files = item.get("files", [])
+                lines.append(f"  - Files: {', '.join(files[:6])}")
+                if len(files) > 6:
+                    lines.append(f"  - ... {len(files) - 6} more files")
             if item.get("keywords"):
                 lines.append(f"  - Keywords: {', '.join(item.get('keywords', [])[:8])}")
+            if item.get("before_behavior"):
+                lines.append(f"  - Before: {item.get('before_behavior')}")
+            if item.get("now_behavior"):
+                lines.append(f"  - Now: {item.get('now_behavior')}")
+            if item.get("trigger"):
+                lines.append(f"  - Trigger: {item.get('trigger')}")
+            if item.get("impact_hint"):
+                lines.append(f"  - Impact: {item.get('impact_hint')}")
+            if item.get("handling_hint"):
+                lines.append(f"  - Handling: {item.get('handling_hint')}")
     else:
         lines.append("- No high or critical findings from automated scanners.")
     lines.extend(["", "## Source Domain Summary", ""])
@@ -1319,7 +1461,9 @@ def write_markdown_report(
             "## Next Source Checks",
             "",
             "- Trace every HIGH/CRITICAL finding with rg before final user-facing conclusions.",
+            "- Read feature-impact-findings.json first when present; these are behavior/performance candidates that must be expanded for the user.",
             "- For MV findings, inspect AlterJobMgr, AlterMVJobExecutor, MaterializedView, and PartitionBasedMvRefreshProcessor flows.",
+            "- For load findings, inspect Stream Load headers, batch write / merge_commit code paths, and transaction/load timeout behavior.",
             "- For config conflicts, check whether the config is mutable and whether restart is required.",
             "- For system variable conflicts, check whether the value is GLOBAL, SESSION_ONLY, READ_ONLY, or invisible.",
         ]
@@ -1378,11 +1522,16 @@ def run_compare(args: argparse.Namespace) -> dict[str, Any]:
 
     config_findings = scan_configs(repo, base["resolved"], target["resolved"])
     pattern_findings = scan_pattern_findings(repo, base["resolved"], target["resolved"], changed_files)
+    feature_impact_findings = scan_feature_impact_findings(repo, base["resolved"], target["resolved"], changed_files)
+    save_json({"feature_impact": feature_impact_findings}, output_dir / "feature-impact-findings.json")
+    if feature_impact_findings:
+        pattern_findings["feature_impact"] = feature_impact_findings
     all_findings = flatten_findings(config_findings, pattern_findings)
     findings_summary = summarize_findings(all_findings)
     incompatibilities = {
         "config_findings": config_findings,
         "pattern_findings": pattern_findings,
+        "feature_impact_findings": feature_impact_findings,
         "all_findings": all_findings,
         "summary": findings_summary,
     }

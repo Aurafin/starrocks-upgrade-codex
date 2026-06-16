@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 from sr_upgrade_compare import (
     classify_source_domains,
@@ -12,6 +15,7 @@ from sr_upgrade_compare import (
     parse_java_fields_with_annotation,
     parse_system_vars_content,
     risk_for_name,
+    scan_feature_impact_findings,
 )
 
 
@@ -83,6 +87,9 @@ class TestRiskAndTier(unittest.TestCase):
     def test_high_risk_name(self):
         self.assertEqual(risk_for_name("mysql_server_version", '"5.1.0"', '"8.0.33"'), "high")
 
+    def test_insert_timeout_high_risk_name(self):
+        self.assertEqual(risk_for_name("insert_timeout", None, "14400"), "high")
+
     def test_bool_flip_medium(self):
         self.assertEqual(risk_for_name("unknown_toggle", "false", "true"), "medium")
 
@@ -131,6 +138,58 @@ class TestRiskAndTier(unittest.TestCase):
         )
         self.assertEqual(conflicts["summary"]["total_system_variable_conflicts"], 1)
         self.assertEqual(conflicts["system_variable_conflicts"][0]["variable_name"], "query_timeout")
+
+
+class TestFeatureImpactScan(unittest.TestCase):
+    def _run_git(self, repo: Path, *args: str) -> str:
+        result = subprocess.run(["git", *args], cwd=repo, text=True, capture_output=True, check=True)
+        return result.stdout.strip()
+
+    def _commit_all(self, repo: Path, message: str) -> str:
+        self._run_git(repo, "add", ".")
+        self._run_git(repo, "commit", "-m", message)
+        return self._run_git(repo, "rev-parse", "HEAD")
+
+    def test_feature_impact_findings_are_grouped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            self._run_git(repo, "init")
+            self._run_git(repo, "config", "user.email", "test@example.com")
+            self._run_git(repo, "config", "user.name", "Test")
+
+            session_variable = repo / "fe/fe-core/src/main/java/com/starrocks/qe/SessionVariable.java"
+            stream_header = repo / "be/src/http/http_common.h"
+            session_variable.parent.mkdir(parents=True)
+            stream_header.parent.mkdir(parents=True)
+            session_variable.write_text('public static final String QUERY_TIMEOUT = "query_timeout";\n', encoding="utf-8")
+            stream_header.write_text("// stream load headers\n", encoding="utf-8")
+            base = self._commit_all(repo, "base")
+
+            session_variable.write_text(
+                'public static final String INSERT_TIMEOUT = "insert_timeout";\n'
+                "@VariableMgr.VarAttr(name = INSERT_TIMEOUT)\n"
+                "private int insertTimeoutS = 14400;\n",
+                encoding="utf-8",
+            )
+            stream_header.write_text(
+                'static const std::string HTTP_ENABLE_MERGE_COMMIT = "enable_merge_commit";\n'
+                'static const std::string HTTP_MERGE_COMMIT_INTERVAL_MS = "merge_commit_interval_ms";\n',
+                encoding="utf-8",
+            )
+            target = self._commit_all(repo, "target")
+
+            findings = scan_feature_impact_findings(
+                repo,
+                base,
+                target,
+                [
+                    "fe/fe-core/src/main/java/com/starrocks/qe/SessionVariable.java",
+                    "be/src/http/http_common.h",
+                ],
+            )
+            ids = {item["id"] for item in findings}
+            self.assertIn("insert_timeout_controls_insert_like_tasks", ids)
+            self.assertIn("stream_load_merge_commit_feature", ids)
 
 
 if __name__ == "__main__":
