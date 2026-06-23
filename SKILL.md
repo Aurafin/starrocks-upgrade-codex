@@ -81,7 +81,7 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 自动脚本会做第一轮系统扫描：
 
 - commit 双向差异：target-only、base-only、PR 号、HIGH/MEDIUM/LOW/SKIP 分层
-- 源码域影响面：config/variables、MV、optimizer/planner、execution/runtime、storage、catalog/schema、transaction/load、protocol/rpc、parser、connector、auth、scheduler
+- 源码域影响面：config/variables、MV、optimizer/planner、execution/runtime、storage、catalog/schema、transaction/load、protocol/rpc、parser、connector、Iceberg/Paimon 外部 catalog、auth、scheduler
 - FE 配置定义：`Config.java` 的 `@ConfField` 新增、移除、默认值变化、mutable 变化
 - BE 配置定义：`be/src/common/config.h` 的 `CONF_*` 宏变化
 - SQL 变量定义：`SessionVariable`、`GlobalVariable`、`SysVariable` 的 `@VarAttr` 变化、alias/show/flag/mutable 变化
@@ -103,6 +103,7 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 - parser grammar 或保留字变化
 - storage format、tablet metadata、rowset/segment 编码变化
 - 新增功能影响导入、事务、超时、队列、MV 刷新、统计任务或客户端行为
+- Iceberg/Paimon 外部 catalog、metadata refresh、scan planning、delete file、schema evolution 或外表 MV 变化
 
 ## 输出要求
 
@@ -121,26 +122,11 @@ python3 scripts/sr_upgrade_compare.py --repo /path/to/starrocks --base-version 3
 - 优先输出用户能直接验证或调整的行为变化：SQL 语义、配置默认值、配置移除/改名、系统变量、MV 激活/刷新/改写、导入/事务、存储/DataCache、客户端兼容、滚动升级风险。
 - 如果发现“源版本所在分支已有修复但目标版本缺失”，单独作为“版本选择风险”写清楚受影响场景；不要只列 PR 号或一句“建议升更高 patch”。
 
-普通 Codex/Markdown 输出可以按上下文自然排版；当用户明确说要发到飞书、Lark、群 post、飞书文档，或输出将通过 `lark-cli` 发布/复制到飞书时，必须启用飞书输出模式并读取 `references/lark-card-output.md`。
+最终输出统一使用 Markdown text/list 格式。
 
-### 飞书输出模式
-
-飞书模式优先生成真正的 `interactive` message card，而不是普通 Markdown 文本。只有以下情况才使用文本 fallback：用户没有给发送目标、明确只要可复制文本、当前没有 `lark-cli`、或无法发送 interactive 卡片。
-
-卡片要求：
-- 卡片 header 写升级对象和判断，例如 `StarRocks 升级评估｜3.3.22-ee -> 3.5.18-ee`。
-- header 颜色按结论选择：阻断/不建议直升用 `red`，高风险灰度用 `orange`，常规灰度用 `blue`，低风险用 `green`。
-- 顶部摘要用一个 `div` 展示版本、判断、范围和重点验证方向。
-- “重点差异”每条使用真正的卡片分格，但标题只写自然标题，例如 `MV refresh 对过滤数据默认更严格`；不要加编号、风险等级或领域标签。
-- 卡片字段名固定使用：`之前行为`、`现在行为`、`触发条件`、`影响`、`处理方式`。
-- 卡片字段布局：`之前行为/现在行为` 两列，`触发条件/影响` 两列，`处理方式` 单独一行。
-- 飞书发送时优先“每条重点差异一张 interactive card”，这样最接近飞书原生卡片阅读体验；如果用户不想多条消息或发送端不方便，再合并成一张卡里的多个分区，每张卡最多放 6 条重点差异。
-- 如果有报告 URL 或飞书文档 URL，底部加按钮 `查看完整报告`；只有本地路径时不要加按钮。
-- 发送前必须遵守 lark-im 安全规则：确认接收人、内容、发送身份；没有明确授权不要直接发群。
-
-文本 fallback 要求：
+重点差异格式：
 - 使用 Markdown ordered list：`1. 标题`、`2. 标题`、`10. 标题`。
-- 每个条目下用缩进子弹列表，子弹前固定 4 个普通空格，例如 `    - 之前行为：...`，飞书通常会渲染为空心圆层级，双位编号时也能保持缩进。
+- 每个条目下用缩进子弹列表，子弹前固定 4 个普通空格，例如 `    - 之前行为：...`，双位编号时也要保持缩进。
 - 不要给标题添加风险等级、领域标签或分隔线。
 - 子弹字段固定使用：`之前行为：`、`现在行为：`、`触发条件：`、`影响：`、`处理方式：`。
 - 配置名、变量名、header、SQL 关键字可以用 inline code；不要把长 `key=value`、长路径或整句包成 code span。

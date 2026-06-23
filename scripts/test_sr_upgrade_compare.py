@@ -143,16 +143,28 @@ class TestRiskAndTier(unittest.TestCase):
             [
                 "fe/fe-core/src/main/java/com/starrocks/catalog/MaterializedView.java",
                 "be/src/storage/rowset/segment.cpp",
+                "fe/fe-core/src/main/java/com/starrocks/connector/iceberg/IcebergMetadata.java",
+                "fe/fe-core/src/main/java/com/starrocks/connector/paimon/PaimonMetadata.java",
+                "be/src/exec/iceberg/iceberg_delete_file_iterator.cpp",
+                "be/src/exec/paimon/paimon_delete_file_builder.cpp",
             ],
             {
                 "fe/fe-core/src/main/java/com/starrocks/catalog/MaterializedView.java": {"added": 10, "removed": 2},
                 "be/src/storage/rowset/segment.cpp": {"added": 5, "removed": 1},
+                "fe/fe-core/src/main/java/com/starrocks/connector/iceberg/IcebergMetadata.java": {"added": 20, "removed": 4},
+                "fe/fe-core/src/main/java/com/starrocks/connector/paimon/PaimonMetadata.java": {"added": 12, "removed": 3},
+                "be/src/exec/iceberg/iceberg_delete_file_iterator.cpp": {"added": 7, "removed": 1},
+                "be/src/exec/paimon/paimon_delete_file_builder.cpp": {"added": 6, "removed": 2},
             },
         )
         domains = {item["domain"]: item for item in summary["domains"]}
         self.assertIn("materialized_view", domains)
         self.assertIn("storage_format", domains)
+        self.assertIn("connector_iceberg", domains)
+        self.assertIn("connector_paimon", domains)
         self.assertEqual(domains["storage_format"]["risk"], "critical")
+        self.assertEqual(domains["connector_iceberg"]["risk"], "high")
+        self.assertEqual(domains["connector_paimon"]["risk"], "high")
 
     def test_system_variable_conflict(self):
         conflicts = config_conflicts(

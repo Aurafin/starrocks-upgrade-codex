@@ -151,40 +151,11 @@ Every user-facing risk item must expose old behavior, new behavior, trigger,
 impact, and handling steps. Use these exact field names in Chinese:
 `之前行为`, `现在行为`, `触发条件`, `影响`, `处理方式`.
 
-When the user says the result is for Feishu/Lark, group posts, Feishu docs, or
-`lark-cli` publishing, read `references/lark-card-output.md`. Prefer a real
-Feishu/Lark `interactive` message card for chat output. Use plain text only as a
-fallback when the user only wants copyable text, no send target is available, or
-interactive cards cannot be sent.
-
-Feishu card mode should use real card sections:
-
-- Header: `StarRocks 升级评估｜<base> -> <target>`
-- Summary `div`: version, judgment, scope, key risk domains
-- Per-risk title: natural title only, such as `MV refresh 对过滤数据默认更严格`
-- Per-risk `fields`: `之前行为`/`现在行为` and `触发条件`/`影响` in two-column card fields
-- Per-risk full-width `div`: `处理方式`
-- Optional action button only for real URLs
-- Prefer one interactive card per important risk item when the user approves
-  multiple Feishu messages. If multiple messages are undesirable, combine risk
-  items into one card and split after 6 risk items per card.
-
-Feishu output mode rules:
-
-- For chat messages, do not pretend plain text is a card. Generate interactive
-  card JSON and send it with `lark-cli im +messages-send --msg-type interactive`
-  after explicit approval.
-- Do not add numbered, risk-level, or domain title tags.
-- Do not add risk levels or domain labels into the item title. Let priority affect ordering only.
-- Use inline code only for short config names, variables, headers, or SQL keywords.
-  Do not wrap long `key=value` strings, long paths, or whole sentences in code spans.
-- Keep each card field compact, but preserve the exact field names: `之前行为`,
-  `现在行为`, `触发条件`, `影响`, `处理方式`.
-- Text fallback: use Markdown ordered list items (`1.`, `2.`, `10.`) with nested
-  bullet lines indented by 4 spaces. This usually renders as hollow-circle
-  nested bullets in Feishu and keeps indentation for double-digit items. Do not
-  add risk/domain title tags or divider lines. Use the exact five field names.
-  Example:
+Always use Markdown text/list output. Use Markdown ordered list items (`1.`,
+`2.`, `10.`) with nested bullet lines indented by 4 spaces. Keep the same
+indentation for double-digit items. Do not add risk/domain title tags or
+divider lines. Use the exact five field names.
+Example:
 
 ```text
 1. INSERT 类任务超时改由 insert_timeout 控制
@@ -205,6 +176,77 @@ Feishu output mode rules:
 Do not collapse each item into a single paragraph. The short answer can limit
 the number of items, but each selected item must still expose old behavior, new
 behavior, trigger, impact, and handling steps.
+
+## External Catalog Checks
+
+For Iceberg/Paimon findings, do not leave them buried under the generic
+`connector_external_catalog` domain. If the target/source diff touches the
+specialized Iceberg or Paimon domains, evaluate whether they deserve their own
+重点差异 item.
+
+### Iceberg
+
+Search keys:
+
+- `iceberg`
+- `IcebergScan`
+- `IcebergMetadata`
+- `IcebergEqualityDelete`
+- `IcebergPartitionsTableRewriteRule`
+- `IcebergTableFactory`
+- `IcebergCatalog`
+- `RESTCatalog`
+- `Glue`
+- `Manifest`
+- `DeleteFile`
+
+High-value paths:
+
+- `fe/fe-core/src/main/java/com/starrocks/connector/iceberg/`
+- `fe/fe-core/src/main/java/com/starrocks/connector/metadata/iceberg/`
+- `fe/fe-core/src/main/java/com/starrocks/server/IcebergTableFactory.java`
+- `fe/fe-core/src/main/java/com/starrocks/sql/optimizer/**/Iceberg*.java`
+- `be/src/exec/iceberg/`
+- `be/src/runtime/iceberg_table_sink.*`
+- `java-extensions/hadoop-ext/src/main/java/com/starrocks/connector/share/iceberg/`
+
+Check user-visible impact:
+
+- Catalog type/property compatibility: Hive, Hadoop, REST, Glue, JDBC.
+- Metadata cache, manifest cache, identifier metrics cache, and refresh behavior.
+- Partition transform and partition pruning behavior.
+- Equality delete / position delete / delete file scan behavior.
+- Schema evolution and type mapping, especially timestamp/date/time/complex type.
+- Iceberg metadata tables and logical metadata scan behavior.
+- Iceberg external MV refresh/rewrite, partition mapping, and transparent MV tests.
+- Iceberg sink/write behavior when target version changes write support.
+
+### Paimon
+
+Search keys:
+
+- `paimon`
+- `PaimonScan`
+- `PaimonMetadata`
+- `PaimonDelete`
+- `PaimonSplits`
+- `PaimonPredicate`
+- `PaimonCatalog`
+
+High-value paths:
+
+- `fe/fe-core/src/main/java/com/starrocks/connector/paimon/`
+- `fe/fe-core/src/main/java/com/starrocks/sql/optimizer/**/Paimon*.java`
+- `be/src/exec/paimon/`
+
+Check user-visible impact:
+
+- Paimon catalog property compatibility and authentication/storage options.
+- Predicate pushdown, split planning, partition pruning, and statistics behavior.
+- Delete file / deletion vector path behavior.
+- Schema evolution and type mapping.
+- External table metadata refresh and query planning.
+- Paimon external MV refresh/rewrite if related MV files also changed.
 
 Prioritize:
 

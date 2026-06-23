@@ -516,6 +516,30 @@ SOURCE_DOMAIN_RULES = [
         ],
     },
     {
+        "domain": "connector_iceberg",
+        "risk": "high",
+        "impact": {"data": True, "behavior": True, "operational": True, "rolling_upgrade": False},
+        "patterns": [
+            "fe/fe-core/src/main/java/com/starrocks/connector/iceberg/**",
+            "fe/fe-core/src/main/java/com/starrocks/connector/metadata/iceberg/**",
+            "fe/fe-core/src/main/java/com/starrocks/server/IcebergTableFactory.java",
+            "fe/fe-core/src/main/java/com/starrocks/sql/optimizer/**/*Iceberg*.java",
+            "be/src/exec/iceberg/**",
+            "be/src/runtime/iceberg_table_sink.*",
+            "java-extensions/hadoop-ext/src/main/java/com/starrocks/connector/share/iceberg/**",
+        ],
+    },
+    {
+        "domain": "connector_paimon",
+        "risk": "high",
+        "impact": {"data": True, "behavior": True, "operational": True, "rolling_upgrade": False},
+        "patterns": [
+            "fe/fe-core/src/main/java/com/starrocks/connector/paimon/**",
+            "fe/fe-core/src/main/java/com/starrocks/sql/optimizer/**/*Paimon*.java",
+            "be/src/exec/paimon/**",
+        ],
+    },
+    {
         "domain": "auth_privilege_security",
         "risk": "medium",
         "impact": {"data": False, "behavior": True, "operational": True, "rolling_upgrade": False},
@@ -1763,6 +1787,7 @@ def write_markdown_report(
             "- Read public-surface-findings.json when present; group added headers/properties/grammar keywords into user-visible feature candidates before deciding what to report.",
             "- For MV findings, inspect AlterJobMgr, AlterMVJobExecutor, MaterializedView, and PartitionBasedMvRefreshProcessor flows.",
             "- For load findings, inspect Stream Load headers, batch write / merge_commit code paths, and transaction/load timeout behavior.",
+            "- For Iceberg/Paimon findings, inspect connector_iceberg/connector_paimon domains, external catalog properties, metadata refresh, scan planning, delete files, schema evolution, and MV refresh/rewrite paths.",
             "- For config conflicts, check whether the config is mutable and whether restart is required.",
             "- For system variable conflicts, check whether the value is GLOBAL, SESSION_ONLY, READ_ONLY, or invisible.",
         ]
